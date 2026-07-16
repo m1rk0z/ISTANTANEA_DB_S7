@@ -72,7 +72,7 @@ class ScanWorker(QThread):
 
                 if self.is_cancelled:
                     return
-                active_ips = scan_subnet_port_102(self.subnet, progress_callback=local_progress)
+                active_ips = scan_subnet_port_102(self.subnet, progress_callback=local_progress, is_cancelled_fn=lambda: self.is_cancelled)
                 
                 # Step 2: Attempt connection to fetch CPU info
                 for ip in active_ips:

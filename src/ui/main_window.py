@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QSpinBox, QCheckBox, QPushButton, 
                              QSplitter, QTreeView, QTabWidget, QTableWidget, 
                              QTableWidgetItem, QFileDialog, QMessageBox, 
-                             QHeaderView, QStatusBar)
+                             QHeaderView, QStatusBar, QComboBox)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 import json

@@ -111,14 +111,14 @@ def check_ip_port_102(ip, timeout=0.2):
     except Exception:
         return False
 
-def scan_subnet_port_102(subnet_str, max_workers=50, timeout=0.2, progress_callback=None):
+def scan_subnet_port_102(subnet_str, max_workers=50, timeout=0.2, progress_callback=None, is_cancelled_fn=None):
     """
     Scans all IP addresses in the given subnet for port 102.
     progress_callback receives (current_step, total_steps, current_ip)
+    is_cancelled_fn is an optional callback returning True if scan should abort.
     """
     try:
         network = ipaddress.IPv4Network(subnet_str, strict=False)
-        # Skip network and broadcast address if it's a standard subnet, but scan all for smaller subnets
         hosts = list(network.hosts())
         if not hosts:
             hosts = [network.network_address]
@@ -131,12 +131,17 @@ def scan_subnet_port_102(subnet_str, max_workers=50, timeout=0.2, progress_callb
     
     logger.info(f"Scanning subnet {subnet_str} ({total_hosts} hosts) for open port 102...")
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Map futures
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
         future_to_ip = {executor.submit(check_ip_port_102, str(ip), timeout): str(ip) for ip in hosts}
         
         completed = 0
         for future in concurrent.futures.as_completed(future_to_ip):
+            if is_cancelled_fn and is_cancelled_fn():
+                # Abort scan immediately and do not block
+                executor.shutdown(wait=False, cancel_futures=True)
+                return []
+                
             ip = future_to_ip[future]
             completed += 1
             
@@ -150,6 +155,8 @@ def scan_subnet_port_102(subnet_str, max_workers=50, timeout=0.2, progress_callb
                 
             if progress_callback:
                 progress_callback(completed, total_hosts, ip)
+    finally:
+        executor.shutdown(wait=False)
                 
     return active_ips
 

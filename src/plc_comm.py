@@ -96,7 +96,7 @@ class PLCClient:
             logger.error(f"Failed to read CPU info: {e}")
             raise PLCCommError(f"Failed to read CPU info: {str(e)}")
 
-    def list_dbs(self):
+    def list_dbs(self, start=1, end=500):
         if not self.is_connected():
             raise PLCCommError("Not connected to PLC.")
             
@@ -115,37 +115,47 @@ class PLCClient:
         if block_type is None:
             block_type = 0x41  # Fallback
 
+        # Method 1: Try official list_blocks_of_type
         try:
-            # Attempt list_blocks_of_type. v3 is list_blocks_of_type(block_type)
-            # v2/legacy is list_blocks_of_type(block_type, size)
             try:
                 res = self.client.list_blocks_of_type(block_type)
             except TypeError:
                 res = self.client.list_blocks_of_type(block_type, 8192)
             
-            if res is None:
-                return []
-            
-            # Ensure return is a list of integers
-            if hasattr(res, '__iter__'):
-                return sorted(list(res))
-            return [res]
+            if res is not None:
+                if hasattr(res, '__iter__'):
+                    return sorted(list(res))
+                return [res]
         except Exception as e:
-            # Second fallback using string
+            logger.warning(f"list_blocks_of_type failed: {e}. Trying secondary string-based listing...")
             try:
                 try:
                     res = self.client.list_blocks_of_type('DB')
                 except TypeError:
                     res = self.client.list_blocks_of_type('DB', 8192)
-                
-                if res is None:
-                    return []
-                if hasattr(res, '__iter__'):
-                    return sorted(list(res))
-                return [res]
+                if res is not None:
+                    if hasattr(res, '__iter__'):
+                        return sorted(list(res))
+                    return [res]
             except Exception as ex:
-                logger.error(f"Failed to list DB blocks: {ex}")
-                raise PLCCommError(f"Failed to list DBs: {str(ex)}")
+                logger.warning(f"Secondary block listing also failed: {ex}. Falling back to sequential range scanning...")
+                
+        # Method 2: Probing fallback (Browsing)
+        # Scan standard DB range sequentially
+        found_dbs = []
+        logger.info(f"Scanning S7 DB range {start} to {end}...")
+        
+        for db_num in range(start, end + 1):
+            try:
+                # Try reading 1 byte to check if DB exists
+                self.client.db_read(db_num, 0, 1)
+                found_dbs.append(db_num)
+            except Exception:
+                # Standard S7ProtocolError with "Object does not exist" or similar error codes
+                pass
+                
+        logger.info(f"Probing found DBs: {found_dbs}")
+        return found_dbs
 
     def probe_db_size(self, db_number):
         """
