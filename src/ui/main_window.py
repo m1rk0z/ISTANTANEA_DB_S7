@@ -738,18 +738,18 @@ class MainWindow(QMainWindow):
             desc_item = QTableWidgetItem(f"Blocco Dati DB{db}")
             self.blocks_table.setItem(i, 3, desc_item)
             
-        # 3. Restore selection
-        if selected_db is not None:
-            for row in range(self.blocks_table.rowCount()):
-                db_item = self.blocks_table.item(row, 1)
-                if db_item and int(db_item.text()) == selected_db:
-                    self.blocks_table.selectRow(row)
-                    break
-                    
+        # 3. Defer selection and scrollbar position restoration until layout updates are finished
+        def restore_table_state():
+            if selected_db is not None:
+                for row in range(self.blocks_table.rowCount()):
+                    db_item = self.blocks_table.item(row, 1)
+                    if db_item and int(db_item.text()) == selected_db:
+                        self.blocks_table.selectRow(row)
+                        break
+            self.blocks_table.verticalScrollBar().setValue(scroll_pos)
+            
+        QTimer.singleShot(0, restore_table_state)
         self.blocks_table.blockSignals(False)
-        
-        # 4. Restore scrollbar position
-        self.blocks_table.verticalScrollBar().setValue(scroll_pos)
 
     def set_table_selection(self, select):
         for row in range(self.blocks_table.rowCount()):
