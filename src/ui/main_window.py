@@ -67,34 +67,26 @@ class DBScanWorker(QThread):
             self.finished.emit(sorted(found_dbs))
             return
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         import snap7
         
-        total = self.end_val - self.start_val + 1
-        db_numbers = list(range(self.start_val, self.end_val + 1))
-        
-        # Use up to 10 parallel client threads to scan S7 DB range
-        num_workers = min(10, total)
-        clients = []
-        
-        for _ in range(num_workers):
-            c = snap7.client.Client()
-            try:
-                c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
-                clients.append(c)
-            except Exception:
-                pass
-                
-        if not clients:
+        c = snap7.client.Client()
+        try:
+            c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
+        except Exception:
             self.finished.emit([])
             return
             
-        active_count = len(clients)
+        total = self.end_val - self.start_val + 1
+        completed = 0
         
-        def scan_single_db(db_num, worker_idx):
+        for db_num in range(self.start_val, self.end_val + 1):
             if self.is_cancelled:
-                return db_num, False, 0
-            c = clients[worker_idx % active_count]
+                break
+                
+            completed += 1
+            if completed % 10 == 0 or completed == total:
+                self.progress.emit(completed, total)
+                
             try:
                 # Probe DB existence
                 c.db_read(db_num, 0, 1)
@@ -115,33 +107,17 @@ class DBScanWorker(QThread):
                         high = mid - 1
                 
                 size = detected if detected > 0 else 100
-                return db_num, True, size
-            except Exception:
-                return db_num, False, 0
-
-        completed = 0
-        with ThreadPoolExecutor(max_workers=active_count) as executor:
-            futures = {executor.submit(scan_single_db, db_num, idx): db_num for idx, db_num in enumerate(db_numbers)}
-            
-            for future in as_completed(futures):
-                if self.is_cancelled:
-                    break
-                completed += 1
-                if completed % 50 == 0 or completed == total:
-                    self.progress.emit(completed, total)
-                    
-                db_num, found, size = future.result()
-                if found:
-                    self.db_found.emit(db_num, size)
-                    found_dbs.append(db_num)
-                    
-        # Cleanup clients
-        for c in clients:
-            try:
-                c.disconnect()
+                self.db_found.emit(db_num, size)
+                found_dbs.append(db_num)
             except Exception:
                 pass
                 
+        # Clean up connection
+        try:
+            c.disconnect()
+        except Exception:
+            pass
+            
         self.finished.emit(sorted(found_dbs))
 
 class MainWindow(QMainWindow):
@@ -280,18 +256,18 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.ip_input)
         
         toolbar.addWidget(QLabel(" Rack: "))
-        self.rack_input = QSpinBox()
-        self.rack_input.setRange(0, 7)
-        self.rack_input.setValue(0)
+        self.rack_input = QComboBox()
+        self.rack_input.addItems([str(i) for i in range(8)])
+        self.rack_input.setCurrentText("0")
         self.rack_input.setMinimumWidth(75)
         self.rack_input.setMaximumWidth(90)
         self.rack_input.setFixedHeight(28)
         toolbar.addWidget(self.rack_input)
         
         toolbar.addWidget(QLabel(" Slot: "))
-        self.slot_input = QSpinBox()
-        self.slot_input.setRange(0, 15)
-        self.slot_input.setValue(2) # Default S7-300 is slot 2
+        self.slot_input = QComboBox()
+        self.slot_input.addItems([str(i) for i in range(16)])
+        self.slot_input.setCurrentText("2") # Default S7-300 is slot 2
         self.slot_input.setMinimumWidth(75)
         self.slot_input.setMaximumWidth(90)
         self.slot_input.setFixedHeight(28)
@@ -501,8 +477,8 @@ class MainWindow(QMainWindow):
             self.on_disconnected()
         else:
             ip = self.ip_input.text().strip()
-            rack = self.rack_input.value()
-            slot = self.slot_input.value()
+            rack = int(self.rack_input.currentText())
+            slot = int(self.slot_input.currentText())
             
             # Clear old lists for the new connection
             self.blocks_table.setRowCount(0)
@@ -825,8 +801,8 @@ class MainWindow(QMainWindow):
         if self.nodes_dialog.exec() == QDialog.DialogCode.Accepted:
             # Load found IP into toolbar
             self.ip_input.setText(self.nodes_dialog.selected_ip)
-            self.rack_input.setValue(self.nodes_dialog.selected_rack)
-            self.slot_input.setValue(self.nodes_dialog.selected_slot)
+            self.rack_input.setCurrentText(str(self.nodes_dialog.selected_rack))
+            self.slot_input.setCurrentText(str(self.nodes_dialog.selected_slot))
             
             # Defer auto-connect to prevent Event Loop conflicts and PyQt C++ crashes
             QTimer.singleShot(100, self.auto_connect_after_dialog)
@@ -880,8 +856,8 @@ class MainWindow(QMainWindow):
                 last_conn = config.get("last_connection", {})
                 if last_conn:
                     self.ip_input.setText(last_conn.get("ip", "192.168.1.10"))
-                    self.rack_input.setValue(last_conn.get("rack", 0))
-                    self.slot_input.setValue(last_conn.get("slot", 2))
+                    self.rack_input.setCurrentText(str(last_conn.get("rack", 0)))
+                    self.slot_input.setCurrentText(str(last_conn.get("slot", 2)))
                     self.sim_check.setChecked(last_conn.get("simulate", False))
                     
                 # Directory profiles
@@ -908,8 +884,8 @@ class MainWindow(QMainWindow):
             config = {
                 "last_connection": {
                     "ip": self.ip_input.text().strip(),
-                    "rack": self.rack_input.value(),
-                    "slot": self.slot_input.value(),
+                    "rack": int(self.rack_input.currentText()),
+                    "slot": int(self.slot_input.currentText()),
                     "simulate": self.sim_check.isChecked()
                 },
                 "profiles": self.profiles
@@ -937,8 +913,8 @@ class MainWindow(QMainWindow):
             self.toggle_connection()
             
         self.ip_input.setText(profile["ip"])
-        self.rack_input.setValue(profile["rack"])
-        self.slot_input.setValue(profile["slot"])
+        self.rack_input.setCurrentText(str(profile["rack"]))
+        self.slot_input.setCurrentText(str(profile["slot"]))
         self.sim_check.setChecked(profile["simulate"])
         
         # Reset selection index
@@ -957,8 +933,8 @@ class MainWindow(QMainWindow):
         profile = {
             "name": name,
             "ip": self.ip_input.text().strip(),
-            "rack": self.rack_input.value(),
-            "slot": self.slot_input.value(),
+            "rack": int(self.rack_input.currentText()),
+            "slot": int(self.slot_input.currentText()),
             "simulate": self.sim_check.isChecked()
         }
         

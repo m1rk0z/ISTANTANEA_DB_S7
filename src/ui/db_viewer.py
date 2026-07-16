@@ -137,8 +137,16 @@ class DBViewer(QWidget):
             loaded_vars = list(parent_window.dbs_structures[db_num])
             
         if not loaded_vars:
-            # Generate default BYTE rows to show live values directly
-            for offset in range(size):
+            # Generate default WORD rows to show live values directly (step of 2)
+            for offset in range(0, size - 1, 2):
+                loaded_vars.append({
+                    "name": f"DB{db_num}.DBW{offset}",
+                    "type": "WORD",
+                    "offset": float(offset)
+                })
+            # Add remaining odd byte if size is odd
+            if size % 2 != 0:
+                offset = size - 1
                 loaded_vars.append({
                     "name": f"DB{db_num}.DBB{offset}",
                     "type": "BYTE",
@@ -178,7 +186,7 @@ class DBViewer(QWidget):
         
         # Offset item
         if int(offset) == offset:
-            offset_str = str(int(offset))
+            offset_str = f"{int(offset)}.0"
         else:
             offset_str = f"{int(offset)}.{int(round((offset - int(offset)) * 10))}"
             
