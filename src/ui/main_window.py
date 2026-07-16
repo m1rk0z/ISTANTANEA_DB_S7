@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 import json
 import datetime
+import time
 
 from plc_comm import PLCClient, PLCCommError
 from ui.styles import RETRO_STYLE
@@ -73,8 +74,8 @@ class DBScanWorker(QThread):
         db_numbers = list(range(self.start_val, self.end_val + 1))
         total = len(db_numbers)
         
-        # Spawn exactly 6 scanning threads to run in parallel
-        num_threads = min(6, total)
+        # Spawn exactly 3 scanning threads to run in parallel (safe limit for S7-400 CP)
+        num_threads = min(3, total)
         thread_segments = [[] for _ in range(num_threads)]
         for idx, db_num in enumerate(db_numbers):
             thread_segments[idx % num_threads].append(db_num)
@@ -140,6 +141,7 @@ class DBScanWorker(QThread):
         for segment in thread_segments:
             t = threading.Thread(target=thread_scan_target, args=(segment,))
             t.start()
+            time.sleep(0.1)  # Stagger TCP connection handshakes to avoid CPU spikes on CP module
             threads.append(t)
             
         # Wait for all threads to complete
