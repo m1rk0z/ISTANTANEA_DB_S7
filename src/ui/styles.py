@@ -199,22 +199,11 @@ QLineEdit, QComboBox {{
     height: 28px;
 }}
 
-QSpinBox {{
-    background-color: white;
-    border: 1px solid {WIN_BORDER};
-    border-radius: 2px;
-    color: {TEXT_DARK};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-    min-height: 28px;
-    padding: 3px;
-}}
-
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+QLineEdit:focus, QComboBox:focus {{
     border: 1px solid {SIEMENS_TEAL};
 }}
 
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
+QLineEdit:disabled, QComboBox:disabled {{
     background-color: #e8e8e8;
     color: #707070;
 }}

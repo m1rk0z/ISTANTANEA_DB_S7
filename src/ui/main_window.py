@@ -128,8 +128,7 @@ class DBScanWorker(QThread):
                     break
                 completed += 1
                 if completed % 50 == 0 or completed == total:
-                    db_num = futures[future]
-                    self.progress.emit(db_num, self.end_val)
+                    self.progress.emit(completed, total)
                     
                 db_num, found, size = future.result()
                 if found:
@@ -286,6 +285,7 @@ class MainWindow(QMainWindow):
         self.rack_input.setValue(0)
         self.rack_input.setMinimumWidth(75)
         self.rack_input.setMaximumWidth(90)
+        self.rack_input.setFixedHeight(28)
         toolbar.addWidget(self.rack_input)
         
         toolbar.addWidget(QLabel(" Slot: "))
@@ -294,6 +294,7 @@ class MainWindow(QMainWindow):
         self.slot_input.setValue(2) # Default S7-300 is slot 2
         self.slot_input.setMinimumWidth(75)
         self.slot_input.setMaximumWidth(90)
+        self.slot_input.setFixedHeight(28)
         toolbar.addWidget(self.slot_input)
         
         self.sim_check = QCheckBox("Simula")
@@ -1107,8 +1108,9 @@ class MainWindow(QMainWindow):
             self.update_project_tree_online()
             self.update_status_bar(f"Trovato DB {db_num} ({size} byte)!")
 
-    def on_db_scan_progress(self, curr, total):
-        self.update_status_bar(f"Scansione DB in corso: verificando DB {curr} di {total}...")
+    def on_db_scan_progress(self, completed, total):
+        pct = int(completed / total * 100) if total > 0 else 0
+        self.update_status_bar(f"Scansione DB in corso: {completed} di {total} verificati ({pct}%)...")
 
     def on_db_scan_finished(self, found_dbs):
         self.scan_range_btn.setText("Scansiona Intervallo DB...")
