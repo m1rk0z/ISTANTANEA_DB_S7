@@ -238,3 +238,18 @@ class NodesDialog(QDialog):
             self.selected_slot = 1
             
         self.accept()
+
+    def done(self, r):
+        # Safe cleanup: disconnect signals if thread is still running
+        # to prevent background thread callbacks on deleted GUI widgets
+        if hasattr(self, 'scan_worker') and self.scan_worker.isRunning():
+            try:
+                self.scan_worker.progress_update.disconnect()
+            except Exception: pass
+            try:
+                self.scan_worker.node_found.disconnect()
+            except Exception: pass
+            try:
+                self.scan_worker.scan_finished.disconnect()
+            except Exception: pass
+        super().done(r)
