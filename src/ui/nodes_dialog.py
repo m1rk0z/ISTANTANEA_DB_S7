@@ -9,6 +9,10 @@ from utils import get_local_ip_adapters, scan_subnet_port_102
 from plc_comm import PLCClient
 from ui.icons import get_custom_icon
 
+# Global reference list to keep QThread instances alive in Python memory until they exit.
+# This prevents std::terminate() crashes when QThread objects are garbage collected while active.
+_active_threads = []
+
 class ScanWorker(QThread):
     # Signals to communicate with the UI
     progress_update = pyqtSignal(int, int, str)  # current, total, ip
@@ -19,73 +23,96 @@ class ScanWorker(QThread):
         super().__init__()
         self.subnet = subnet
         self.simulate = simulate
+        self.is_cancelled = False
 
     def run(self):
-        found_nodes = []
-        
-        if self.simulate:
-            # Simulate a realistic scan of 254 hosts with mock PLC discovery
-            mock_hosts = 254
-            mock_plcs = {
-                10: {"ModuleTypeName": "CPU 315-2 PN/DP", "SerialNumber": "123-456-7890", "ASName": "MAIN_STATION", "ModuleName": "CPU315"},
-                25: {"ModuleTypeName": "CPU 414-3 PN/DP", "SerialNumber": "999-888-7776", "ASName": "LINE_A_CONTROLLER", "ModuleName": "CPU414"},
-                105: {"ModuleTypeName": "CPU 317-2 DP", "SerialNumber": "555-444-3332", "ASName": "PACKAGING_PLC", "ModuleName": "CPU317"}
-            }
-            
-            # Subnet base
-            parts = self.subnet.split('.')
-            base_ip = f"{parts[0]}.{parts[1]}.{parts[2]}"
-            
-            for i in range(1, mock_hosts + 1):
-                ip = f"{base_ip}.{i}"
-                time.sleep(0.01)  # scan speed
-                
-                # Emit progress
-                self.progress_update.emit(i, mock_hosts, ip)
-                
-                if i in mock_plcs:
-                    time.sleep(0.1) # connection latency
-                    self.node_found.emit(ip, mock_plcs[i])
-                    found_nodes.append((ip, mock_plcs[i]))
-                    
-            self.scan_finished.emit(found_nodes)
-            return
-
-        # REAL SCAN: Scan TCP port 102
+        _active_threads.append(self)
         try:
-            # Step 1: Scan for open port 102
-            def local_progress(curr, total, ip_scanned):
-                self.progress_update.emit(curr, total, ip_scanned)
-
-            active_ips = scan_subnet_port_102(self.subnet, progress_callback=local_progress)
+            found_nodes = []
             
-            # Step 2: Attempt connection to fetch CPU info
-            for ip in active_ips:
-                try:
-                    # Temporary Client to read CPU info
-                    temp_client = PLCClient(simulate=False)
-                    # Try Rack 0, Slot 2 (common S7-300) first
-                    try:
-                        temp_client.connect(ip, rack=0, slot=2)
-                    except Exception:
-                        # Fallback: Try Slot 1 (S7-1200/1500 or some S7-400)
-                        temp_client.connect(ip, rack=0, slot=1)
-                        
-                    if temp_client.is_connected():
-                        info = temp_client.get_cpu_info()
-                        self.node_found.emit(ip, info)
-                        found_nodes.append((ip, info))
-                        temp_client.disconnect()
-                except Exception as e:
-                    # Node has port 102 open but refused S7 comm or has different credentials
-                    unknown_info = {"ModuleTypeName": "Unknown S7 Device", "SerialNumber": "N/A", "ASName": "N/A", "ModuleName": "N/A"}
-                    self.node_found.emit(ip, unknown_info)
-                    found_nodes.append((ip, unknown_info))
+            if self.simulate:
+                # Simulate a realistic scan of 254 hosts with mock PLC discovery
+                mock_hosts = 254
+                mock_plcs = {
+                    10: {"ModuleTypeName": "CPU 315-2 PN/DP", "SerialNumber": "123-456-7890", "ASName": "MAIN_STATION", "ModuleName": "CPU315"},
+                    25: {"ModuleTypeName": "CPU 414-3 PN/DP", "SerialNumber": "999-888-7776", "ASName": "LINE_A_CONTROLLER", "ModuleName": "CPU414"},
+                    105: {"ModuleTypeName": "CPU 317-2 DP", "SerialNumber": "555-444-3332", "ASName": "PACKAGING_PLC", "ModuleName": "CPU317"}
+                }
+                
+                # Subnet base
+                parts = self.subnet.split('.')
+                base_ip = f"{parts[0]}.{parts[1]}.{parts[2]}"
+                
+                for i in range(1, mock_hosts + 1):
+                    if self.is_cancelled:
+                        break
+                    ip = f"{base_ip}.{i}"
+                    time.sleep(0.01)  # scan speed
                     
-            self.scan_finished.emit(found_nodes)
-        except Exception as e:
-            # Emit empty list on error
-            self.scan_finished.emit([])
+                    # Emit progress
+                    self.progress_update.emit(i, mock_hosts, ip)
+                    
+                    if i in mock_plcs:
+                        time.sleep(0.1) # connection latency
+                        if self.is_cancelled:
+                            break
+                        self.node_found.emit(ip, mock_plcs[i])
+                        found_nodes.append((ip, mock_plcs[i]))
+                        
+                if not self.is_cancelled:
+                    self.scan_finished.emit(found_nodes)
+                return
+
+            # REAL SCAN: Scan TCP port 102
+            try:
+                # Step 1: Scan for open port 102
+                def local_progress(curr, total, ip_scanned):
+                    if not self.is_cancelled:
+                        self.progress_update.emit(curr, total, ip_scanned)
+
+                if self.is_cancelled:
+                    return
+                active_ips = scan_subnet_port_102(self.subnet, progress_callback=local_progress)
+                
+                # Step 2: Attempt connection to fetch CPU info
+                for ip in active_ips:
+                    if self.is_cancelled:
+                        break
+                    try:
+                        # Temporary Client to read CPU info
+                        temp_client = PLCClient(simulate=False)
+                        # Try Rack 0, Slot 2 (common S7-300) first
+                        try:
+                            temp_client.connect(ip, rack=0, slot=2)
+                        except Exception:
+                            # Fallback: Try Slot 1 (S7-1200/1500 or some S7-400)
+                            temp_client.connect(ip, rack=0, slot=1)
+                            
+                        if temp_client.is_connected():
+                            if self.is_cancelled:
+                                break
+                            info = temp_client.get_cpu_info()
+                            self.node_found.emit(ip, info)
+                            found_nodes.append((ip, info))
+                            temp_client.disconnect()
+                    except Exception as e:
+                        if self.is_cancelled:
+                            break
+                        # Node has port 102 open but refused S7 comm or has different credentials
+                        unknown_info = {"ModuleTypeName": "Unknown S7 Device", "SerialNumber": "N/A", "ASName": "N/A", "ModuleName": "N/A"}
+                        self.node_found.emit(ip, unknown_info)
+                        found_nodes.append((ip, unknown_info))
+                        
+                if not self.is_cancelled:
+                    self.scan_finished.emit(found_nodes)
+            except Exception as e:
+                # Emit empty list on error
+                if not self.is_cancelled:
+                    self.scan_finished.emit([])
+        finally:
+            if self in _active_threads:
+                _active_threads.remove(self)
+
 
 
 class NodesDialog(QDialog):
@@ -243,6 +270,7 @@ class NodesDialog(QDialog):
         # Safe cleanup: disconnect signals if thread is still running
         # to prevent background thread callbacks on deleted GUI widgets
         if hasattr(self, 'scan_worker') and self.scan_worker.isRunning():
+            self.scan_worker.is_cancelled = True # Signal thread loop to break
             try:
                 self.scan_worker.progress_update.disconnect()
             except Exception: pass
@@ -252,4 +280,8 @@ class NodesDialog(QDialog):
             try:
                 self.scan_worker.scan_finished.disconnect()
             except Exception: pass
+            # Wait up to 100ms for clean thread join. The global _active_threads list
+            # keeps the thread object referenced so it doesn't get garbage-collected
+            # while running, preventing "QThread: Destroyed while thread is still running" crash.
+            self.scan_worker.wait(100)
         super().done(r)
