@@ -67,26 +67,34 @@ class DBScanWorker(QThread):
             self.finished.emit(sorted(found_dbs))
             return
 
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         import snap7
         
-        c = snap7.client.Client()
-        try:
-            c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
-        except Exception:
+        total = self.end_val - self.start_val + 1
+        db_numbers = list(range(self.start_val, self.end_val + 1))
+        
+        # Use exactly 6 parallel client connections (safe limit that won't trigger PLC CP overload)
+        num_workers = min(6, total)
+        clients = []
+        
+        for _ in range(num_workers):
+            c = snap7.client.Client()
+            try:
+                c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
+                clients.append(c)
+            except Exception:
+                pass
+                
+        if not clients:
             self.finished.emit([])
             return
             
-        total = self.end_val - self.start_val + 1
-        completed = 0
+        active_count = len(clients)
         
-        for db_num in range(self.start_val, self.end_val + 1):
+        def scan_single_db(db_num, worker_idx):
             if self.is_cancelled:
-                break
-                
-            completed += 1
-            if completed % 10 == 0 or completed == total:
-                self.progress.emit(completed, total)
-                
+                return db_num, False, 0
+            c = clients[worker_idx % active_count]
             try:
                 # Probe DB existence
                 c.db_read(db_num, 0, 1)
@@ -107,17 +115,33 @@ class DBScanWorker(QThread):
                         high = mid - 1
                 
                 size = detected if detected > 0 else 100
-                self.db_found.emit(db_num, size)
-                found_dbs.append(db_num)
+                return db_num, True, size
+            except Exception:
+                return db_num, False, 0
+
+        completed = 0
+        with ThreadPoolExecutor(max_workers=active_count) as executor:
+            futures = {executor.submit(scan_single_db, db_num, idx): db_num for idx, db_num in enumerate(db_numbers)}
+            
+            for future in as_completed(futures):
+                if self.is_cancelled:
+                    break
+                completed += 1
+                if completed % 200 == 0 or completed == total:
+                    self.progress.emit(completed, total)
+                    
+                db_num, found, size = future.result()
+                if found:
+                    self.db_found.emit(db_num, size)
+                    found_dbs.append(db_num)
+                    
+        # Cleanup clients
+        for c in clients:
+            try:
+                c.disconnect()
             except Exception:
                 pass
                 
-        # Clean up connection
-        try:
-            c.disconnect()
-        except Exception:
-            pass
-            
         self.finished.emit(sorted(found_dbs))
 
 class MainWindow(QMainWindow):
@@ -1042,6 +1066,60 @@ class MainWindow(QMainWindow):
         self.update_project_tree_online()
         self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")
 
+class ScanRangeDialog(QDialog):
+    def __init__(self, parent=None, default_start=1, default_end=1000):
+        super().__init__(parent)
+        self.setWindowTitle("Imposta Intervallo Scansione")
+        self.setMinimumWidth(380)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
+        
+        # Info note
+        info_label = QLabel(
+            "<b>Nota sulla velocità:</b> La scansione di intervalli molto grandi (es. fino a 65535) "
+            "può richiedere tempo a seconda della latenza di rete del PLC. "
+            "Ti consigliamo di limitare l'intervallo a quello realmente utilizzato."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666666; font-size: 9pt;")
+        layout.addWidget(info_label)
+        
+        # Form
+        form_layout = QGridLayout()
+        form_layout.setSpacing(8)
+        
+        form_layout.addWidget(QLabel("DB Iniziale:"), 0, 0)
+        self.start_input = QSpinBox()
+        self.start_input.setRange(1, 65535)
+        self.start_input.setValue(default_start)
+        self.start_input.setFixedHeight(28)
+        form_layout.addWidget(self.start_input, 0, 1)
+        
+        form_layout.addWidget(QLabel("DB Finale:"), 1, 0)
+        self.end_input = QSpinBox()
+        self.end_input.setRange(1, 65535)
+        self.end_input.setValue(default_end)
+        self.end_input.setFixedHeight(28)
+        form_layout.addWidget(self.end_input, 1, 1)
+        
+        layout.addLayout(form_layout)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        self.ok_btn = QPushButton("Avvia Scansione")
+        self.ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.ok_btn)
+        
+        self.cancel_btn = QPushButton("Annulla")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(btn_layout)
+
     def toggle_db_range_scan(self):
         # If already running, cancel it
         if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
@@ -1055,15 +1133,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "PLC non connesso", "Devi connetterti al PLC prima di poter scansionare l'intervallo DB.")
             return
 
-        from PyQt6.QtWidgets import QInputDialog
-        # Ask for Start DB
-        start_val, ok1 = QInputDialog.getInt(self, "Scansione DB - Inizio", "Inserisci il numero DB iniziale:", 1, 1, 65535, 1)
-        if not ok1:
+        # Show ScanRangeDialog
+        dialog = ScanRangeDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        # Ask for End DB
-        end_val, ok2 = QInputDialog.getInt(self, "Scansione DB - Fine", "Inserisci il numero DB finale:", 1000, start_val, 65535, 1)
-        if not ok2:
-            return
+            
+        start_val = dialog.start_input.value()
+        end_val = dialog.end_input.value()
 
         # Setup worker
         self.scan_range_btn.setText("Ferma Scansione")
