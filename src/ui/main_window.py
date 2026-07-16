@@ -684,17 +684,21 @@ class MainWindow(QMainWindow):
                 self.on_disconnected()
 
     def populate_blocks_table(self):
-        # 1. Save checked DB numbers to preserve checkbox states
+        # 1. Save checked DB numbers and identify already existing DBs
         checked_dbs = set()
+        old_dbs = set()
         had_items = self.blocks_table.rowCount() > 0
+        
         for row in range(self.blocks_table.rowCount()):
-            chk_widget = self.blocks_table.cellWidget(row, 0)
-            if chk_widget:
-                checkbox = chk_widget.layout().itemAt(0).widget()
-                if checkbox and checkbox.isChecked():
-                    db_item = self.blocks_table.item(row, 1)
-                    if db_item:
-                        checked_dbs.add(int(db_item.text()))
+            db_item = self.blocks_table.item(row, 1)
+            if db_item:
+                db_num = int(db_item.text())
+                old_dbs.add(db_num)
+                chk_widget = self.blocks_table.cellWidget(row, 0)
+                if chk_widget:
+                    checkbox = chk_widget.layout().itemAt(0).widget()
+                    if checkbox and checkbox.isChecked():
+                        checked_dbs.add(db_num)
                         
         # Save current selected row's DB number
         selected_db = None
@@ -718,8 +722,8 @@ class MainWindow(QMainWindow):
             chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             chk_layout.setContentsMargins(0, 0, 0, 0)
             checkbox = QCheckBox()
-            # Default to Checked if first load, otherwise preserve checked state
-            checkbox.setChecked(not had_items or db in checked_dbs)
+            # New DBs are Checked (True) by default. Existing DBs preserve their Checked state.
+            checkbox.setChecked(not had_items or db not in old_dbs or db in checked_dbs)
             chk_layout.addWidget(checkbox)
             self.blocks_table.setCellWidget(i, 0, chk_widget)
             
@@ -746,7 +750,13 @@ class MainWindow(QMainWindow):
                 for row in range(self.blocks_table.rowCount()):
                     db_item = self.blocks_table.item(row, 1)
                     if db_item and int(db_item.text()) == selected_db:
-                        self.blocks_table.selectRow(row)
+                        # Select items manually on each column item to avoid triggering QTableWidget auto-scroll
+                        self.blocks_table.blockSignals(True)
+                        for col in range(self.blocks_table.columnCount()):
+                            cell_item = self.blocks_table.item(row, col)
+                            if cell_item:
+                                cell_item.setSelected(True)
+                        self.blocks_table.blockSignals(False)
                         break
             self.blocks_table.verticalScrollBar().setValue(scroll_pos)
             
