@@ -820,7 +820,6 @@ class MainWindow(QMainWindow):
         )
         if not filepath:
             return
-            
         self.update_status_bar("Esecuzione backup snapshot...")
         
         try:
@@ -832,6 +831,9 @@ class MainWindow(QMainWindow):
                     db_num = int(db_num_item.text())
                     desc_item = self.blocks_table.item(r, 3)
                     descriptions[db_num] = desc_item.text() if desc_item else ""
+
+            failed_dbs = []  # list of (db_num, error_message)
+            success_count = 0
 
             if filepath.endswith('.xlsx'):
                 # Save to Excel Snapshot format
@@ -866,16 +868,21 @@ class MainWindow(QMainWindow):
                     if size == 0:
                         continue
                         
-                    data = self.plc_client.read_db_bytes(db, size)
-                    desc = descriptions.get(db, f"Blocco Dati DB{db}")
-                    
-                    ws.cell(row=row_idx, column=1, value=db)
-                    ws.cell(row=row_idx, column=2, value=size)
-                    ws.cell(row=row_idx, column=3, value=data.hex().upper())
-                    ws.cell(row=row_idx, column=4, value=desc)
-                    row_idx += 1
-                    
-                wb.save(filepath)
+                    try:
+                        data = self.plc_client.read_db_bytes(db, size)
+                        desc = descriptions.get(db, f"Blocco Dati DB{db}")
+                        
+                        ws.cell(row=row_idx, column=1, value=db)
+                        ws.cell(row=row_idx, column=2, value=size)
+                        ws.cell(row=row_idx, column=3, value=data.hex().upper())
+                        ws.cell(row=row_idx, column=4, value=desc)
+                        row_idx += 1
+                        success_count += 1
+                    except Exception as db_err:
+                        failed_dbs.append((db, str(db_err)))
+                        
+                if success_count > 0:
+                    wb.save(filepath)
             else:
                 # Save to legacy JSON/S7D format
                 backup_data = {
@@ -890,26 +897,49 @@ class MainWindow(QMainWindow):
                     if size == 0:
                         continue
                         
-                    data = self.plc_client.read_db_bytes(db, size)
-                    desc = descriptions.get(db, f"Blocco Dati DB{db}")
-                    
-                    backup_data["dbs"][str(db)] = {
-                        "size": size,
-                        "data": data.hex().upper(),
-                        "description": desc
-                    }
-                    
-                with open(filepath, 'w') as f:
-                    json.dump(backup_data, f, indent=4)
-                    
-            self.update_status_bar(f"Backup completato con successo: {len(dbs_list)} DB scritti.")
-            QMessageBox.information(
-                self, "Backup Completato",
-                f"Backup di {len(dbs_list)} Data Blocks salvato correttamente in:\n{filepath}"
-            )
+                    try:
+                        data = self.plc_client.read_db_bytes(db, size)
+                        desc = descriptions.get(db, f"Blocco Dati DB{db}")
+                        
+                        backup_data["dbs"][str(db)] = {
+                            "size": size,
+                            "data": data.hex().upper(),
+                            "description": desc
+                        }
+                        success_count += 1
+                    except Exception as db_err:
+                        failed_dbs.append((db, str(db_err)))
+                        
+                if success_count > 0:
+                    with open(filepath, 'w') as f:
+                        json.dump(backup_data, f, indent=4)
+                        
+            if success_count == 0:
+                self.update_status_bar("Backup fallito.")
+                error_msgs = "\n".join([f"- DB {db}: {err}" for db, err in failed_dbs])
+                QMessageBox.critical(
+                    self, "Errore Backup",
+                    f"Impossibile effettuare il backup. La lettura di tutti i Data Block selezionati è fallita:\n{error_msgs}"
+                )
+                return
+
+            if failed_dbs:
+                self.update_status_bar(f"Backup completato parzialmente: {success_count} DB scritti. {len(failed_dbs)} errori.")
+                error_msgs = "\n".join([f"- DB {db}: {err}" for db, err in failed_dbs])
+                QMessageBox.warning(
+                    self, "Backup Completato con Omissioni",
+                    f"Il backup di {success_count} Data Blocks è stato salvato correttamente in:\n{filepath}\n\n"
+                    f"Tuttavia, i seguenti {len(failed_dbs)} Data Block non sono stati letti a causa di errori:\n{error_msgs}"
+                )
+            else:
+                self.update_status_bar(f"Backup completato con successo: {success_count} DB scritti.")
+                QMessageBox.information(
+                    self, "Backup Completato",
+                    f"Backup di {success_count} Data Blocks salvato correttamente in:\n{filepath}"
+                )
         except Exception as e:
             self.update_status_bar("Backup fallito.")
-            QMessageBox.critical(self, "Errore Backup", f"Si è verificato un errore durante la lettura/scrittura del backup:\n{str(e)}")
+            QMessageBox.critical(self, "Errore Backup", f"Si è verificato un errore durante la scrittura del backup:\n{str(e)}")
 
     def restore_from_file(self):
         filepath, _ = QFileDialog.getOpenFileName(
