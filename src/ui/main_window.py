@@ -728,12 +728,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Errore Ripristino", f"Impossibile completare il ripristino:\n{str(e)}")
 
     def open_accessible_nodes(self):
-        dialog = NodesDialog(self, simulate=self.plc_client.simulate)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        self.nodes_dialog = NodesDialog(self, simulate=self.plc_client.simulate)
+        if self.nodes_dialog.exec() == QDialog.DialogCode.Accepted:
             # Load found IP into toolbar
-            self.ip_input.setText(dialog.selected_ip)
-            self.rack_input.setValue(dialog.selected_rack)
-            self.slot_input.setValue(dialog.selected_slot)
+            self.ip_input.setText(self.nodes_dialog.selected_ip)
+            self.rack_input.setValue(self.nodes_dialog.selected_rack)
+            self.slot_input.setValue(self.nodes_dialog.selected_slot)
             
             # Auto-connect
             if not self.plc_client.is_connected():
@@ -741,13 +741,13 @@ class MainWindow(QMainWindow):
 
     def open_comparison_window(self):
         # We pass self.dbs_structures so CompareWindow can show structured variables if defined
-        dialog = CompareWindow(
+        self.compare_dialog = CompareWindow(
             self, 
             simulate=self.plc_client.simulate, 
             plc_client=self.plc_client,
             parent_dbs_structures=self.dbs_structures
         )
-        dialog.exec()
+        self.compare_dialog.exec()
 
     def on_structures_changed(self, db_num, variables):
         # Store variable mappings globally so they persist and are shared with the CompareWindow

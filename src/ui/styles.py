@@ -199,6 +199,10 @@ QLineEdit, QComboBox, QSpinBox {{
     height: 28px;
 }}
 
+QSpinBox {{
+    padding-right: 20px;
+}}
+
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
     border: 1px solid {SIEMENS_TEAL};
 }}

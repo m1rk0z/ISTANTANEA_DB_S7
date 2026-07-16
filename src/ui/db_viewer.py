@@ -79,7 +79,13 @@ class DBViewer(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Nome Variabile", "Tipo Dato", "Offset (Byte.Bit)", "Valore Live", "Nuovo Valore", "Azione"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnWidth(1, 95)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(3, 100)
+        self.table.setColumnWidth(4, 100)
+        self.table.setColumnWidth(5, 95)
         layout.addWidget(self.table)
         
         # Table change listener for local edits
@@ -171,7 +177,12 @@ class DBViewer(QWidget):
         self.table.setCellWidget(row, 1, type_combo)
         
         # Offset item
-        offset_item = QTableWidgetItem(str(offset))
+        if int(offset) == offset:
+            offset_str = str(int(offset))
+        else:
+            offset_str = f"{int(offset)}.{int(round((offset - int(offset)) * 10))}"
+            
+        offset_item = QTableWidgetItem(offset_str)
         self.table.setItem(row, 2, offset_item)
         
         # Live value item (Read Only)
@@ -188,14 +199,17 @@ class DBViewer(QWidget):
         action_widget = QWidget()
         act_layout = QHBoxLayout(action_widget)
         act_layout.setContentsMargins(2, 2, 2, 2)
-        act_layout.setSpacing(2)
+        act_layout.setSpacing(4)
         
-        write_btn = QPushButton("Scrivi")
+        write_btn = QPushButton()
+        write_btn.setIcon(get_custom_icon("write"))
+        write_btn.setToolTip("Scrivi valore sul PLC")
         write_btn.clicked.connect(lambda: self.write_single_variable(row))
         act_layout.addWidget(write_btn)
         
-        delete_btn = QPushButton("X")
-        delete_btn.setStyleSheet("color: red; font-weight: bold; max-width: 25px;")
+        delete_btn = QPushButton()
+        delete_btn.setIcon(get_custom_icon("delete"))
+        delete_btn.setToolTip("Elimina variabile")
         delete_btn.clicked.connect(lambda: self.delete_variable(row))
         act_layout.addWidget(delete_btn)
         
@@ -304,33 +318,36 @@ class DBViewer(QWidget):
             QMessageBox.critical(self, "Errore di Scrittura", f"Impossibile scrivere il DB {self.db_number} nel PLC:\n{str(e)}")
 
     def update_live_values(self):
-        if not self.raw_data:
-            return
-            
+        is_conn = self.plc_client and self.plc_client.is_connected()
+        
         for row, var in enumerate(self.variables):
             offset = var["offset"]
             dtype = var["type"]
             
-            offset_str = str(offset)
-            if "." in offset_str:
-                parts = offset_str.split('.')
-                byte_off = int(parts[0])
-                bit_off = int(parts[1])
+            if not is_conn or not self.raw_data:
+                val = "---"
             else:
-                byte_off = int(offset)
-                bit_off = 0
-                
-            val = parse_s7_data(dtype, self.raw_data, byte_off, bit_off)
+                offset_str = str(offset)
+                if "." in offset_str:
+                    parts = offset_str.split('.')
+                    byte_off = int(parts[0])
+                    bit_off = int(parts[1])
+                else:
+                    byte_off = int(offset)
+                    bit_off = 0
+                    
+                val = parse_s7_data(dtype, self.raw_data, byte_off, bit_off)
+                if val is None:
+                    val = "---"
             
             # Put in table
             item = self.table.item(row, 3)
             if item:
-                if val is not None:
-                    item.setText(str(val))
-                    item.setForeground(Qt.GlobalColor.black)
+                item.setText(str(val))
+                if val == "---":
+                    item.setForeground(Qt.GlobalColor.gray)
                 else:
-                    item.setText("Out of Bounds")
-                    item.setForeground(Qt.GlobalColor.red)
+                    item.setForeground(Qt.GlobalColor.black)
 
     def write_single_variable(self, row):
         if not self.db_number:
