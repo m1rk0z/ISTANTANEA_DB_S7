@@ -191,12 +191,12 @@ QLineEdit, QComboBox, QSpinBox {{
     background-color: white;
     border: 1px solid {WIN_BORDER};
     border-radius: 2px;
-    padding: 2px;
+    padding: 3px;
     color: {TEXT_DARK};
     font-size: 10pt;
     font-family: "Segoe UI", "Tahoma", sans-serif;
-    min-height: 24px;
-    height: 24px;
+    min-height: 28px;
+    height: 28px;
 }}
 
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{

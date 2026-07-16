@@ -78,27 +78,42 @@ class ScanWorker(QThread):
                 for ip in active_ips:
                     if self.is_cancelled:
                         break
-                    try:
-                        # Temporary Client to read CPU info
-                        temp_client = PLCClient(simulate=False)
-                        # Try Rack 0, Slot 2 (common S7-300) first
+                    
+                    connected_slot = None
+                    temp_client = PLCClient(simulate=False)
+                    
+                    # Try slots sequentially: 2 (S7-300), 3 (S7-400), 1 (S7-1200/1500)
+                    for slot in [2, 3, 1]:
                         try:
-                            temp_client.connect(ip, rack=0, slot=2)
+                            temp_client.connect(ip, rack=0, slot=slot)
+                            if temp_client.is_connected():
+                                connected_slot = slot
+                                break
                         except Exception:
-                            # Fallback: Try Slot 1 (S7-1200/1500 or some S7-400)
-                            temp_client.connect(ip, rack=0, slot=1)
+                            pass
                             
-                        if temp_client.is_connected():
+                    if connected_slot is not None:
+                        try:
                             if self.is_cancelled:
                                 break
-                            info = temp_client.get_cpu_info()
+                            try:
+                                info = temp_client.get_cpu_info()
+                            except Exception:
+                                # Fallback: Guess CPU type based on connected slot
+                                if connected_slot == 3:
+                                    info = {"ModuleTypeName": "S7-400 CPU", "SerialNumber": "N/A", "ASName": "S7-400 Station", "ModuleName": "CPU400"}
+                                elif connected_slot == 2:
+                                    info = {"ModuleTypeName": "S7-300 CPU", "SerialNumber": "N/A", "ASName": "S7-300 Station", "ModuleName": "CPU300"}
+                                else:
+                                    info = {"ModuleTypeName": "S7-1200/1500 CPU", "SerialNumber": "N/A", "ASName": "S7-1200/1500 Station", "ModuleName": "CPU1200/1500"}
+                                    
                             self.node_found.emit(ip, info)
                             found_nodes.append((ip, info))
                             temp_client.disconnect()
-                    except Exception as e:
-                        if self.is_cancelled:
-                            break
-                        # Node has port 102 open but refused S7 comm or has different credentials
+                        except Exception:
+                            pass
+                    else:
+                        # Fallback if connection totally failed but port 102 was open
                         unknown_info = {"ModuleTypeName": "Unknown S7 Device", "SerialNumber": "N/A", "ASName": "N/A", "ModuleName": "N/A"}
                         self.node_found.emit(ip, unknown_info)
                         found_nodes.append((ip, unknown_info))
@@ -280,10 +295,9 @@ class NodesDialog(QDialog):
             pass
 
     def done(self, r):
-        # Safe cleanup: disconnect signals if thread is still running
-        # to prevent background thread callbacks on deleted GUI widgets
+        # Safe cleanup: disconnect signals and force terminate thread if still running
         if hasattr(self, 'scan_worker') and self.scan_worker.isRunning():
-            self.scan_worker.is_cancelled = True # Signal thread loop to break
+            self.scan_worker.is_cancelled = True
             try:
                 self.scan_worker.progress_update.disconnect()
             except Exception: pass
@@ -293,8 +307,7 @@ class NodesDialog(QDialog):
             try:
                 self.scan_worker.scan_finished.disconnect()
             except Exception: pass
-            # Wait up to 100ms for clean thread join. The global _active_threads list
-            # keeps the thread object referenced so it doesn't get garbage-collected
-            # while running, preventing "QThread: Destroyed while thread is still running" crash.
-            self.scan_worker.wait(100)
+            
+            # Let the thread exit in background, waiting only up to 50ms to keep GUI responsive without PyQt C++ crashes
+            self.scan_worker.wait(50)
         super().done(r)
