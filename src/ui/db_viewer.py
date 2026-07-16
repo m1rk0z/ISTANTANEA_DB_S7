@@ -66,7 +66,7 @@ class DBViewer(QWidget):
         self.export_btn.setEnabled(False)
         struct_layout.addWidget(self.export_btn)
         
-        struct_layout.addSpacer(20)
+        struct_layout.addStretch()
         
         self.add_row_btn = QPushButton("Aggiungi Variabile")
         self.add_row_btn.clicked.connect(self.add_variable_row)
