@@ -1061,7 +1061,7 @@ class MainWindow(QMainWindow):
 
     def import_symbols_file(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Importa Simbolico PLC (STEP 7)", "", "Symbol files (*.seq *.sdf *.csv *.txt);;All Files (*)"
+            self, "Importa Simbolico PLC (STEP 7)", "", "STEP 7 Symbol Files (*.asc);;All Symbol Files (*.asc *.seq *.sdf *.csv *.txt);;All Files (*)"
         )
         if not filepath:
             return
@@ -1069,38 +1069,46 @@ class MainWindow(QMainWindow):
         try:
             symbols_map = {} # {db_num: {"name": symbol_name, "comment": comment}}
             
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    # Skip comments or empty lines
-                    line = line.strip()
-                    if not line or line.startswith('//'):
-                        continue
-                        
-                    # Split by tab, semicolon or comma
-                    parts = []
-                    if '\t' in line:
-                        parts = line.split('\t')
-                    elif ';' in line:
-                        parts = line.split(';')
-                    else:
-                        parts = line.split(',')
-                        
-                    parts = [p.strip().strip('"') for p in parts]
-                    if len(parts) < 2:
-                        continue
-                        
-                    symbol_name = parts[0]
-                    address = parts[1]
-                    comment = parts[3] if len(parts) > 3 else ""
+            # Read file with encoding fallback (ANSI/latin-1 is common for STEP 7 exports)
+            lines = []
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+            except UnicodeDecodeError:
+                with open(filepath, 'r', encoding='latin-1') as f:
+                    lines = f.readlines()
                     
-                    # Check if address refers to a DB (e.g. DB10 or DB 10)
-                    addr_clean = address.replace(" ", "").upper()
-                    if addr_clean.startswith("DB") and addr_clean[2:].isdigit():
-                        db_num = int(addr_clean[2:])
-                        symbols_map[db_num] = {
-                            "name": symbol_name,
-                            "comment": comment
-                        }
+            for line in lines:
+                # Skip comments or empty lines
+                line = line.strip()
+                if not line or line.startswith('//'):
+                    continue
+                    
+                # Split by tab, semicolon or comma
+                parts = []
+                if '\t' in line:
+                    parts = line.split('\t')
+                elif ';' in line:
+                    parts = line.split(';')
+                else:
+                    parts = line.split(',')
+                    
+                parts = [p.strip().strip('"') for p in parts]
+                if len(parts) < 2:
+                    continue
+                    
+                symbol_name = parts[0]
+                address = parts[1]
+                comment = parts[3] if len(parts) > 3 else ""
+                
+                # Check if address refers to a DB (e.g. DB10 or DB 10)
+                addr_clean = address.replace(" ", "").upper()
+                if addr_clean.startswith("DB") and addr_clean[2:].isdigit():
+                    db_num = int(addr_clean[2:])
+                    symbols_map[db_num] = {
+                        "name": symbol_name,
+                        "comment": comment
+                    }
             
             if not symbols_map:
                 QMessageBox.warning(self, "Nessun Simbolo Trovato", "Non è stato trovato alcun simbolo DB compatibile nel file selezionato.")

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ui.main_window import MainWindow
+from ui.styles import get_modern_stylesheet
 
 def main():
     # Configure logging
@@ -25,7 +26,6 @@ def main():
     app = QApplication(sys.argv)
     
     # Apply modern dynamic stylesheet based on system theme (Dark/Light mode)
-    from ui.styles import get_modern_stylesheet
     app.setStyleSheet(get_modern_stylesheet())
     
     # Launch main window
