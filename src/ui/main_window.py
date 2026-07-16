@@ -67,81 +67,85 @@ class DBScanWorker(QThread):
             self.finished.emit(sorted(found_dbs))
             return
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         import snap7
+        import threading
         
-        total = self.end_val - self.start_val + 1
         db_numbers = list(range(self.start_val, self.end_val + 1))
+        total = len(db_numbers)
         
-        # Use exactly 6 parallel client connections (safe limit that won't trigger PLC CP overload)
-        num_workers = min(6, total)
-        clients = []
+        # Spawn exactly 6 scanning threads to run in parallel
+        num_threads = min(6, total)
+        thread_segments = [[] for _ in range(num_threads)]
+        for idx, db_num in enumerate(db_numbers):
+            thread_segments[idx % num_threads].append(db_num)
+            
+        completed_lock = threading.Lock()
+        completed_count = 0
+        found_dbs_lock = threading.Lock()
         
-        for _ in range(num_workers):
+        def thread_scan_target(assigned_dbs):
+            nonlocal completed_count
+            
             c = snap7.client.Client()
             try:
                 c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
-                clients.append(c)
             except Exception:
-                pass
-                
-        if not clients:
-            self.finished.emit([])
-            return
-            
-        active_count = len(clients)
-        
-        def scan_single_db(db_num, worker_idx):
-            if self.is_cancelled:
-                return db_num, False, 0
-            c = clients[worker_idx % active_count]
-            try:
-                # Probe DB existence
-                c.db_read(db_num, 0, 1)
-                
-                # Success! Perform binary search to probe DB size
-                low = 1
-                high = 65535
-                detected = 0
-                while low <= high:
-                    if self.is_cancelled:
-                        break
-                    mid = (low + high) // 2
-                    try:
-                        c.db_read(db_num, 0, mid)
-                        detected = mid
-                        low = mid + 1
-                    except Exception:
-                        high = mid - 1
-                
-                size = detected if detected > 0 else 100
-                return db_num, True, size
-            except Exception:
-                return db_num, False, 0
+                # Update progress for connection failure
+                with completed_lock:
+                    completed_count += len(assigned_dbs)
+                return
 
-        completed = 0
-        with ThreadPoolExecutor(max_workers=active_count) as executor:
-            futures = {executor.submit(scan_single_db, db_num, idx): db_num for idx, db_num in enumerate(db_numbers)}
-            
-            for future in as_completed(futures):
+            for db_num in assigned_dbs:
                 if self.is_cancelled:
                     break
-                completed += 1
-                if completed % 200 == 0 or completed == total:
-                    self.progress.emit(completed, total)
                     
-                db_num, found, size = future.result()
-                if found:
+                try:
+                    # Probe DB existence
+                    c.db_read(db_num, 0, 1)
+                    
+                    # Success! Perform binary search to probe DB size
+                    low = 1
+                    high = 65535
+                    detected = 0
+                    while low <= high:
+                        if self.is_cancelled:
+                            break
+                        mid = (low + high) // 2
+                        try:
+                            c.db_read(db_num, 0, mid)
+                            detected = mid
+                            low = mid + 1
+                        except Exception:
+                            high = mid - 1
+                    
+                    size = detected if detected > 0 else 100
+                    with found_dbs_lock:
+                        found_dbs.append(db_num)
                     self.db_found.emit(db_num, size)
-                    found_dbs.append(db_num)
+                except Exception:
+                    pass
                     
-        # Cleanup clients
-        for c in clients:
+                with completed_lock:
+                    completed_count += 1
+                    if completed_count % 200 == 0 or completed_count == total:
+                        self.progress.emit(completed_count, total)
+                        
             try:
                 c.disconnect()
             except Exception:
                 pass
-                
+
+        # Spawn threads
+        threads = []
+        for segment in thread_segments:
+            t = threading.Thread(target=thread_scan_target, args=(segment,))
+            t.start()
+            threads.append(t)
+            
+        # Wait for all threads to complete
+        for t in threads:
+            t.join()
+            
         self.finished.emit(sorted(found_dbs))
 
 class ScanRangeDialog(QDialog):
