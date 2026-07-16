@@ -94,15 +94,21 @@ class ScanWorker(QThread):
                     connected_slot = None
                     temp_client = PLCClient(simulate=False)
                     
-                    # Try slots sequentially: 2 (S7-300), 3 (S7-400), 1 (S7-1200/1500)
-                    for slot in [2, 3, 1]:
-                        try:
-                            temp_client.connect(ip, rack=0, slot=slot)
-                            if temp_client.is_connected():
-                                connected_slot = slot
-                                break
-                        except Exception:
-                            pass
+                    connected_rack = 0
+                    connected_slot = None
+                    # Try slots sequentially across Rack 0 and Rack 1 to support H-CPUs
+                    for rack in [0, 1]:
+                        for slot in [2, 3, 1]:
+                            try:
+                                temp_client.connect(ip, rack=rack, slot=slot)
+                                if temp_client.is_connected():
+                                    connected_rack = rack
+                                    connected_slot = slot
+                                    break
+                            except Exception:
+                                pass
+                        if connected_slot is not None:
+                            break
                             
                     if connected_slot is not None:
                         try:
@@ -121,6 +127,9 @@ class ScanWorker(QThread):
                                     
                             # Resolve MAC Address
                             info["MACAddress"] = get_mac_address(ip)
+                            # Save Rack and Slot
+                            info["Rack"] = connected_rack
+                            info["Slot"] = connected_slot
                             
                             self.node_found.emit(ip, info)
                             found_nodes.append((ip, info))
@@ -158,6 +167,7 @@ class NodesDialog(QDialog):
         self.selected_ip = None
         self.selected_rack = 0
         self.selected_slot = 2
+        self.discovered_nodes = {}
         
         self.setWindowTitle("Nodi Accessibili (Accessible Nodes)")
         self.setMinimumSize(600, 400)
@@ -251,6 +261,7 @@ class NodesDialog(QDialog):
         self.status_label.setText(f"Scansione: controllo {ip}...")
 
     def on_node_found(self, ip, info):
+        self.discovered_nodes[ip] = info
         row = self.table.rowCount()
         self.table.insertRow(row)
         
@@ -288,28 +299,14 @@ class NodesDialog(QDialog):
             ip_item = self.table.item(row, 0)
             if not ip_item:
                 return
-            self.selected_ip = ip_item.text()
+            ip = ip_item.text()
+            self.selected_ip = ip
             
-            # Defaults
-            self.selected_rack = 0
-            self.selected_slot = 2
+            # Load exact Rack and Slot detected during scanning
+            info = self.discovered_nodes.get(ip, {})
+            self.selected_rack = info.get("Rack", 0)
+            self.selected_slot = info.get("Slot", 3 if "400" in info.get("ModuleTypeName", "") else (2 if "300" in info.get("ModuleTypeName", "") else 1))
             
-            cpu_item = self.table.item(row, 1)
-            if cpu_item:
-                cpu_model = cpu_item.text()
-                if "CPU 4" in cpu_model or "400" in cpu_model:
-                    # S7-400 CPU is often in slot 3
-                    self.selected_rack = 0
-                    self.selected_slot = 3
-                elif "CPU 3" in cpu_model or "300" in cpu_model:
-                    # S7-300 CPU is always in slot 2
-                    self.selected_rack = 0
-                    self.selected_slot = 2
-                else:
-                    # S7-1200/1500 is in slot 1
-                    self.selected_rack = 0
-                    self.selected_slot = 1
-                    
             self.accept()
         except Exception as e:
             # Prevent crashes if table has invalid items
@@ -317,7 +314,7 @@ class NodesDialog(QDialog):
 
     def done(self, r):
         # Safe cleanup: disconnect signals and force terminate thread if still running
-        if hasattr(self, 'scan_worker') and self.scan_worker.isRunning():
+        if hasattr(self, 'scan_worker') and self.scan_worker is not None and self.scan_worker.isRunning():
             self.scan_worker.is_cancelled = True
             try:
                 self.scan_worker.progress_update.disconnect()
