@@ -104,7 +104,7 @@ class DBViewer(QWidget):
         self.db_size = size
         self.raw_data = bytearray(size)
         
-        self.db_label.setText(f"<b>Visualizzazione DB {db_number}</b> (Dimensione: {size} byte)")
+        self.db_label.setText(f"<b>Visualizzazione DB {db_num}</b> (Dimensione: {size} byte)")
         
         # Enable actions
         self.import_btn.setEnabled(True)
