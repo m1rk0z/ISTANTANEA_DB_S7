@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSplitter, QTreeView, QTabWidget, QTableWidget, 
                              QTableWidgetItem, QFileDialog, QMessageBox, 
                              QHeaderView, QStatusBar, QComboBox)
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 import json
 import datetime
@@ -14,6 +14,64 @@ from ui.icons import get_custom_icon
 from ui.nodes_dialog import NodesDialog
 from ui.db_viewer import DBViewer
 from ui.compare_window import CompareWindow
+
+class ConnectWorker(QThread):
+    connected = pyqtSignal(list, dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, plc_client, ip, rack, slot):
+        super().__init__()
+        self.plc_client = plc_client
+        self.ip = ip
+        self.rack = rack
+        self.slot = slot
+
+    def run(self):
+        try:
+            self.plc_client.connect(self.ip, self.rack, self.slot)
+            dbs_list = self.plc_client.list_dbs()
+            dbs_sizes = {}
+            for db_num in dbs_list:
+                try:
+                    dbs_sizes[db_num] = self.plc_client.get_db_size(db_num)
+                except Exception:
+                    dbs_sizes[db_num] = 100
+            self.connected.emit(dbs_list, dbs_sizes)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+class DBScanWorker(QThread):
+    progress = pyqtSignal(int, int)
+    db_found = pyqtSignal(int, int)
+    finished = pyqtSignal(list)
+
+    def __init__(self, plc_client, start_val, end_val):
+        super().__init__()
+        self.plc_client = plc_client
+        self.start_val = start_val
+        self.end_val = end_val
+        self.is_cancelled = False
+
+    def run(self):
+        found_dbs = []
+        try:
+            for db_num in range(self.start_val, self.end_val + 1):
+                if self.is_cancelled:
+                    break
+                self.progress.emit(db_num, self.end_val)
+                try:
+                    self.plc_client.client.db_read(db_num, 0, 1)
+                    try:
+                        size = self.plc_client.get_db_size(db_num)
+                    except Exception:
+                        size = 100
+                    self.db_found.emit(db_num, size)
+                    found_dbs.append(db_num)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.finished.emit(found_dbs)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -146,19 +204,24 @@ class MainWindow(QMainWindow):
         # Connection Controls
         toolbar.addWidget(QLabel("IP PLC: "))
         self.ip_input = QLineEdit("192.168.1.10")
-        self.ip_input.setStyleSheet("max-width: 120px;")
+        self.ip_input.setMinimumWidth(135)
+        self.ip_input.setMaximumWidth(150)
         toolbar.addWidget(self.ip_input)
         
         toolbar.addWidget(QLabel(" Rack: "))
         self.rack_input = QSpinBox()
         self.rack_input.setRange(0, 7)
         self.rack_input.setValue(0)
+        self.rack_input.setMinimumWidth(55)
+        self.rack_input.setMaximumWidth(70)
         toolbar.addWidget(self.rack_input)
         
         toolbar.addWidget(QLabel(" Slot: "))
         self.slot_input = QSpinBox()
         self.slot_input.setRange(0, 15)
         self.slot_input.setValue(2) # Default S7-300 is slot 2
+        self.slot_input.setMinimumWidth(55)
+        self.slot_input.setMaximumWidth(70)
         toolbar.addWidget(self.slot_input)
         
         self.sim_check = QCheckBox("Simula")
@@ -219,6 +282,11 @@ class MainWindow(QMainWindow):
         self.add_manual_db_btn = QPushButton("Aggiungi DB Manuale...")
         self.add_manual_db_btn.clicked.connect(self.add_db_manually)
         action_layout.addWidget(self.add_manual_db_btn)
+        
+        # Scan Range Button
+        self.scan_range_btn = QPushButton("Scansiona Intervallo DB...")
+        self.scan_range_btn.clicked.connect(self.toggle_db_range_scan)
+        action_layout.addWidget(self.scan_range_btn)
         
         layout.addLayout(action_layout)
         
@@ -345,14 +413,28 @@ class MainWindow(QMainWindow):
             
             self.update_status_bar(f"Connessione in corso a {ip}...")
             self.connect_btn.setEnabled(False)
-            self.connect_btn.repaint()
+            self.connect_btn.setText("Connessione...")
             
-            try:
-                self.plc_client.connect(ip, rack, slot)
-                self.on_connected()
-            except PLCCommError as e:
-                self.on_disconnected()
-                QMessageBox.critical(self, "Errore di Connessione", f"Impossibile collegarsi al PLC:\n{str(e)}")
+            # Disable configs during connection
+            self.ip_input.setEnabled(False)
+            self.rack_input.setEnabled(False)
+            self.slot_input.setEnabled(False)
+            self.sim_check.setEnabled(False)
+            
+            # Spawn background ConnectWorker thread
+            self.connect_worker = ConnectWorker(self.plc_client, ip, rack, slot)
+            self.connect_worker.connected.connect(self.on_connect_success)
+            self.connect_worker.failed.connect(self.on_connect_failed)
+            self.connect_worker.start()
+
+    def on_connect_success(self, dbs_list, dbs_sizes):
+        self.dbs_list = dbs_list
+        self.dbs_sizes = dbs_sizes
+        self.on_connected()
+
+    def on_connect_failed(self, error_msg):
+        self.on_disconnected()
+        QMessageBox.critical(self, "Errore di Connessione", f"Impossibile collegarsi al PLC:\n{error_msg}")
 
     def on_connected(self):
         self.connect_btn.setText("Disconnetti")
@@ -370,29 +452,27 @@ class MainWindow(QMainWindow):
         self.backup_all_btn.setEnabled(True)
         self.db_viewer_tab.monitor_checkbox.setEnabled(True)
         
-        # Read PLC blocks
         try:
-            self.dbs_list = self.plc_client.list_dbs()
-            
-            # Fetch sizes
-            self.dbs_sizes = {}
-            for db in self.dbs_list:
-                try:
-                    self.dbs_sizes[db] = self.plc_client.get_db_size(db)
-                except Exception:
-                    self.dbs_sizes[db] = 0
-                    
             self.populate_blocks_table()
             self.update_project_tree_online()
             
-            cpu_info = self.plc_client.get_cpu_info()
-            self.update_status_bar(
-                f"Connesso a {self.plc_client.ip} | CPU: {cpu_info.get('ModuleTypeName', 'N/A')} "
-                f"| Seriale: {cpu_info.get('SerialNumber', 'N/A')}"
-            )
+            # Fetch CPU info if possible (non-blocking since already connected)
+            cpu_info = {}
+            try:
+                cpu_info = self.plc_client.get_cpu_info()
+            except Exception:
+                pass
+                
+            if cpu_info:
+                self.update_status_bar(
+                    f"Connesso a {self.plc_client.ip} | CPU: {cpu_info.get('ModuleTypeName', 'N/A')} "
+                    f"| Seriale: {cpu_info.get('SerialNumber', 'N/A')}"
+                )
+            else:
+                self.update_status_bar(f"Connesso a {self.plc_client.ip} (Nessuna info CPU)")
         except Exception as e:
-            QMessageBox.warning(self, "Rilevamento Blocchi Fallito", f"Connesso al PLC, ma non è stato possibile listare i DB:\n{str(e)}")
-            self.update_status_bar(f"Connesso a {self.plc_client.ip} (Nessun DB letto)")
+            QMessageBox.warning(self, "Errore Inizializzazione", f"Rilevato errore durante la configurazione della connessione:\n{str(e)}")
+            self.update_status_bar(f"Connesso a {self.plc_client.ip}")
 
     def on_disconnected(self):
         self.connect_btn.setText("Connetti")
@@ -884,3 +964,54 @@ class MainWindow(QMainWindow):
         self.populate_blocks_table()
         self.update_project_tree_online()
         self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")
+
+    def toggle_db_range_scan(self):
+        # If already running, cancel it
+        if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
+            self.db_scan_worker.is_cancelled = True
+            self.scan_range_btn.setText("Interruzione...")
+            self.scan_range_btn.setEnabled(False)
+            return
+
+        # Check if connected
+        if not self.plc_client.is_connected():
+            QMessageBox.warning(self, "PLC non connesso", "Devi connetterti al PLC prima di poter scansionare l'intervallo DB.")
+            return
+
+        from PyQt6.QtWidgets import QInputDialog
+        # Ask for Start DB
+        start_val, ok1 = QInputDialog.getInt(self, "Scansione DB - Inizio", "Inserisci il numero DB iniziale:", 1, 1, 65535, 1)
+        if not ok1:
+            return
+        # Ask for End DB
+        end_val, ok2 = QInputDialog.getInt(self, "Scansione DB - Fine", "Inserisci il numero DB finale:", 1000, start_val, 65535, 1)
+        if not ok2:
+            return
+
+        # Setup worker
+        self.scan_range_btn.setText("Ferma Scansione")
+        self.update_status_bar(f"Scansione DB avviata (da DB {start_val} a DB {end_val})...")
+        
+        self.db_scan_worker = DBScanWorker(self.plc_client, start_val, end_val)
+        self.db_scan_worker.progress.connect(self.on_db_scan_progress)
+        self.db_scan_worker.db_found.connect(self.on_db_found)
+        self.db_scan_worker.finished.connect(self.on_db_scan_finished)
+        self.db_scan_worker.start()
+
+    def on_db_found(self, db_num, size):
+        if db_num not in self.dbs_list:
+            self.dbs_list.append(db_num)
+            self.dbs_list.sort()
+            self.dbs_sizes[db_num] = size
+            self.populate_blocks_table()
+            self.update_project_tree_online()
+            self.update_status_bar(f"Trovato DB {db_num} ({size} byte)!")
+
+    def on_db_scan_progress(self, curr, total):
+        self.update_status_bar(f"Scansione DB in corso: verificando DB {curr} di {total}...")
+
+    def on_db_scan_finished(self, found_dbs):
+        self.scan_range_btn.setText("Scansiona Intervallo DB...")
+        self.scan_range_btn.setEnabled(True)
+        self.update_status_bar(f"Scansione DB completata. Trovati {len(found_dbs)} DB nell'intervallo.")
+        QMessageBox.information(self, "Scansione Completata", f"Scansione completata. Trovati {len(found_dbs)} blocchi DB.")
