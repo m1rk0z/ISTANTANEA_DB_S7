@@ -1067,7 +1067,7 @@ class MainWindow(QMainWindow):
         self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")
 
 class ScanRangeDialog(QDialog):
-    def __init__(self, parent=None, default_start=1, default_end=1000):
+    def __init__(self, parent=None, default_start=1, default_end=65535):
         super().__init__(parent)
         self.setWindowTitle("Imposta Intervallo Scansione")
         self.setMinimumWidth(380)
