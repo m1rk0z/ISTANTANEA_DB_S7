@@ -1,0 +1,660 @@
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QLabel, QLineEdit, QSpinBox, QCheckBox, QPushButton, 
+                             QSplitter, QTreeView, QTabWidget, QTableWidget, 
+                             QTableWidgetItem, QFileDialog, QMessageBox, 
+                             QHeaderView, QStatusBar)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
+import json
+import datetime
+
+from plc_comm import PLCClient, PLCCommError
+from ui.styles import RETRO_STYLE
+from ui.icons import get_custom_icon
+from ui.nodes_dialog import NodesDialog
+from ui.db_viewer import DBViewer
+from ui.compare_window import CompareWindow
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("IstanteS7 - Siemens S7 PLC Backup & Tool")
+        self.setMinimumSize(1000, 650)
+        self.setWindowIcon(get_custom_icon("plc"))
+        
+        # Style sheet
+        self.setStyleSheet(RETRO_STYLE)
+        
+        # S7 Comm client
+        self.plc_client = PLCClient(simulate=False)
+        self.dbs_list = []      # List of DB numbers found on PLC
+        self.dbs_sizes = {}     # {db_num: size}
+        self.dbs_structures = {} # {db_num: [variables]}
+        
+        # Set up GUI layouts
+        self.init_ui()
+        
+        # Heartbeat timer for connection status check
+        self.hb_timer = QTimer(self)
+        self.hb_timer.timeout.connect(self.check_connection_hb)
+        self.hb_timer.start(1000)
+
+    def init_ui(self):
+        # Create Menu Bar
+        self.create_menu_bar()
+        
+        # Create Tool Bar
+        self.create_tool_bar()
+        
+        # Main Central Widget
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Splitter Layout (Left Tree, Right Tabs)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(splitter, 1)
+        
+        # Left Tree Pane
+        self.tree = QTreeView()
+        self.tree_model = QStandardItemModel()
+        self.tree_model.setHorizontalHeaderLabels(["Oggetti di Progetto"])
+        self.tree.setModel(self.tree_model)
+        self.tree.clicked.connect(self.on_tree_node_clicked)
+        splitter.addWidget(self.tree)
+        
+        # Build initial Tree hierarchy
+        self.init_project_tree()
+        
+        # Right Workspace Tabs Pane
+        self.tabs = QTabWidget()
+        splitter.addWidget(self.tabs)
+        
+        # Tab 1: DB Blocks list
+        self.blocks_tab = QWidget()
+        self.init_blocks_tab()
+        self.tabs.addTab(self.blocks_tab, "Elenco Data Blocks")
+        
+        # Tab 2: Individual DB Viewer
+        self.db_viewer_tab = DBViewer(
+            plc_client=self.plc_client, 
+            on_structures_changed=self.on_structures_changed
+        )
+        self.tabs.addTab(self.db_viewer_tab, "Editor Mappa DB (Monitor)")
+        
+        # Set split ratio (Tree 25%, Workspace 75%)
+        splitter.setSizes([250, 750])
+        
+        # Status Bar
+        self.status = QStatusBar()
+        self.setStatusBar(self.status)
+        self.update_status_bar("Disconnesso.")
+
+    def create_menu_bar(self):
+        menubar = self.menuBar()
+        
+        # File Menu
+        file_menu = menubar.addMenu("File")
+        
+        open_act = QAction("Apri File Snapshot...", self)
+        open_act.setIcon(get_custom_icon("project"))
+        open_act.triggered.connect(self.restore_from_file)
+        file_menu.addAction(open_act)
+        
+        file_menu.addSeparator()
+        
+        exit_act = QAction("Esci", self)
+        exit_act.triggered.connect(self.close)
+        file_menu.addAction(exit_act)
+        
+        # PLC Menu
+        plc_menu = menubar.addMenu("PLC")
+        
+        nodes_act = QAction("Nodi Accessibili...", self)
+        nodes_act.setIcon(get_custom_icon("scan"))
+        nodes_act.triggered.connect(self.open_accessible_nodes)
+        plc_menu.addAction(nodes_act)
+        
+        plc_menu.addSeparator()
+        
+        self.connect_act = QAction("Connetti", self)
+        self.connect_act.triggered.connect(self.toggle_connection)
+        plc_menu.addAction(self.connect_act)
+        
+        compare_act = QAction("Compara Snapshots...", self)
+        compare_act.setIcon(get_custom_icon("compare"))
+        compare_act.triggered.connect(self.open_comparison_window)
+        plc_menu.addAction(compare_act)
+        
+        # Help Menu
+        help_menu = menubar.addMenu("?")
+        about_act = QAction("Informazioni su...", self)
+        about_act.triggered.connect(self.show_about)
+        help_menu.addAction(about_act)
+
+    def create_tool_bar(self):
+        toolbar = self.addToolBar("S7 Connection Toolbar")
+        toolbar.setMovable(False)
+        
+        # Connection Controls
+        toolbar.addWidget(QLabel("IP PLC: "))
+        self.ip_input = QLineEdit("192.168.1.10")
+        self.ip_input.setStyleSheet("max-width: 120px;")
+        toolbar.addWidget(self.ip_input)
+        
+        toolbar.addWidget(QLabel(" Rack: "))
+        self.rack_input = QSpinBox()
+        self.rack_input.setRange(0, 7)
+        self.rack_input.setValue(0)
+        toolbar.addWidget(self.rack_input)
+        
+        toolbar.addWidget(QLabel(" Slot: "))
+        self.slot_input = QSpinBox()
+        self.slot_input.setRange(0, 15)
+        self.slot_input.setValue(2) # Default S7-300 is slot 2
+        toolbar.addWidget(self.slot_input)
+        
+        self.sim_check = QCheckBox("Simula")
+        self.sim_check.setChecked(False)
+        self.sim_check.stateChanged.connect(self.on_sim_changed)
+        toolbar.addWidget(self.sim_check)
+        
+        self.connect_btn = QPushButton("Connetti")
+        self.connect_btn.clicked.connect(self.toggle_connection)
+        toolbar.addWidget(self.connect_btn)
+        
+        toolbar.addSeparator()
+        
+        # Action Shortcuts
+        nodes_btn = QPushButton("Nodi Accessibili")
+        nodes_btn.setIcon(get_custom_icon("scan"))
+        nodes_btn.clicked.connect(self.open_accessible_nodes)
+        toolbar.addWidget(nodes_btn)
+        
+        compare_btn = QPushButton("Confronta")
+        compare_btn.setIcon(get_custom_icon("compare"))
+        compare_btn.clicked.connect(self.open_comparison_window)
+        toolbar.addWidget(compare_btn)
+
+    def init_blocks_tab(self):
+        layout = QVBoxLayout(self.blocks_tab)
+        
+        # Title and Select Actions
+        action_layout = QHBoxLayout()
+        action_layout.addWidget(QLabel("<b>Blocchi Dati (DB) rilevati nel PLC:</b>"))
+        
+        select_all_btn = QPushButton("Seleziona Tutti")
+        select_all_btn.clicked.connect(lambda: self.set_table_selection(True))
+        action_layout.addWidget(select_all_btn)
+        
+        select_none_btn = QPushButton("Deseleziona Tutti")
+        select_none_btn.clicked.connect(lambda: self.set_table_selection(False))
+        action_layout.addWidget(select_none_btn)
+        
+        layout.addLayout(action_layout)
+        
+        # Table listing DBs
+        self.blocks_table = QTableWidget()
+        self.blocks_table.setColumnCount(4)
+        self.blocks_table.setHorizontalHeaderLabels(["Backup", "Numero DB", "Dimensione (byte)", "Descrizione"])
+        self.blocks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.blocks_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.blocks_table.itemDoubleClicked.connect(self.on_block_row_double_clicked)
+        layout.addWidget(self.blocks_table)
+        
+        # Backup actions
+        backup_layout = QHBoxLayout()
+        
+        self.backup_selected_btn = QPushButton("Salva Snapshot (Selezionati)...")
+        self.backup_selected_btn.setIcon(get_custom_icon("backup"))
+        self.backup_selected_btn.setEnabled(False)
+        self.backup_selected_btn.clicked.connect(self.backup_selected_dbs)
+        backup_layout.addWidget(self.backup_selected_btn)
+        
+        self.backup_all_btn = QPushButton("Salva Snapshot (Tutti)...")
+        self.backup_all_btn.setIcon(get_custom_icon("backup"))
+        self.backup_all_btn.setEnabled(False)
+        self.backup_all_btn.clicked.connect(self.backup_all_dbs)
+        backup_layout.addWidget(self.backup_all_btn)
+        
+        self.restore_btn = QPushButton("Ripristina da File Snapshot...")
+        self.restore_btn.setIcon(get_custom_icon("restore"))
+        self.restore_btn.clicked.connect(self.restore_from_file)
+        backup_layout.addWidget(self.restore_btn)
+        
+        layout.addLayout(backup_layout)
+
+    def init_project_tree(self):
+        self.tree_model.clear()
+        self.tree_model.setHorizontalHeaderLabels(["Oggetti di Progetto"])
+        
+        # Root Node: Project
+        self.root_node = QStandardItem("Progetto S7 (Backup & Restore)")
+        self.root_node.setIcon(get_custom_icon("project"))
+        self.root_node.setFlags(self.root_node.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.tree_model.appendRow(self.root_node)
+        
+        # PLC Node
+        self.plc_node = QStandardItem("PLC Offline")
+        self.plc_node.setIcon(get_custom_icon("plc"))
+        self.plc_node.setFlags(self.plc_node.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.root_node.appendRow(self.plc_node)
+        
+        # Blocks Folder Node
+        self.blocks_folder_node = QStandardItem("Blocchi")
+        self.blocks_folder_node.setIcon(get_custom_icon("project"))
+        self.blocks_folder_node.setFlags(self.blocks_folder_node.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.plc_node.appendRow(self.blocks_folder_node)
+        
+        self.tree.expandAll()
+
+    def update_project_tree_online(self):
+        # Update connection node name
+        status_suffix = " (Simulazione)" if self.plc_client.simulate else ""
+        self.plc_node.setText(f"PLC: {self.plc_client.ip}{status_suffix}")
+        
+        # Clear child nodes of Blocks folder
+        self.blocks_folder_node.removeRows(0, self.blocks_folder_node.rowCount())
+        
+        # Add listed DBs as child nodes
+        for db_num in self.dbs_list:
+            db_item = QStandardItem(f"DB {db_num}")
+            db_item.setIcon(get_custom_icon("db"))
+            db_item.setData(db_num, Qt.ItemDataRole.UserRole)
+            db_item.setFlags(db_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.blocks_folder_node.appendRow(db_item)
+            
+        self.tree.expandAll()
+
+    def on_tree_node_clicked(self, index):
+        item = self.tree_model.itemFromIndex(index)
+        if not item:
+            return
+            
+        text = item.text()
+        db_num = item.data(Qt.ItemDataRole.UserRole)
+        
+        if text == "Blocchi" or item == self.blocks_folder_node:
+            self.tabs.setCurrentIndex(0) # Go to DB blocks list
+        elif db_num is not None:
+            self.tabs.setCurrentIndex(1) # Go to individual DB mapper
+            size = self.dbs_sizes.get(db_num, 0)
+            self.db_viewer_tab.set_active_db(db_num, size)
+
+    def on_block_row_double_clicked(self, item):
+        row = item.row()
+        db_num_item = self.blocks_table.item(row, 1)
+        if db_num_item:
+            db_num = int(db_num_item.text())
+            size = self.dbs_sizes.get(db_num, 0)
+            
+            # Switch tabs and load viewer
+            self.tabs.setCurrentIndex(1)
+            self.db_viewer_tab.set_active_db(db_num, size)
+
+    def on_sim_changed(self, state):
+        simulate = (state == 2)
+        if self.plc_client.is_connected():
+            QMessageBox.warning(self, "Disconnetti prima", "Disconnetti la connessione corrente prima di cambiare modalità.")
+            # Revert checkbox state
+            self.sim_check.blockSignals(True)
+            self.sim_check.setChecked(self.plc_client.simulate)
+            self.sim_check.blockSignals(False)
+            return
+            
+        self.plc_client = PLCClient(simulate=simulate)
+        self.db_viewer_tab.plc_client = self.plc_client
+
+    def toggle_connection(self):
+        if self.plc_client.is_connected():
+            self.plc_client.disconnect()
+            self.on_disconnected()
+        else:
+            ip = self.ip_input.text().strip()
+            rack = self.rack_input.value()
+            slot = self.slot_input.value()
+            
+            self.update_status_bar(f"Connessione in corso a {ip}...")
+            self.connect_btn.setEnabled(False)
+            self.connect_btn.repaint()
+            
+            try:
+                self.plc_client.connect(ip, rack, slot)
+                self.on_connected()
+            except PLCCommError as e:
+                self.on_disconnected()
+                QMessageBox.critical(self, "Errore di Connessione", f"Impossibile collegarsi al PLC:\n{str(e)}")
+
+    def on_connected(self):
+        self.connect_btn.setText("Disconnetti")
+        self.connect_btn.setEnabled(True)
+        self.connect_act.setText("Disconnetti")
+        
+        # Disable configs while connected
+        self.ip_input.setEnabled(False)
+        self.rack_input.setEnabled(False)
+        self.slot_input.setEnabled(False)
+        self.sim_check.setEnabled(False)
+        
+        # Enable actions
+        self.backup_selected_btn.setEnabled(True)
+        self.backup_all_btn.setEnabled(True)
+        self.db_viewer_tab.monitor_checkbox.setEnabled(True)
+        
+        # Read PLC blocks
+        try:
+            self.dbs_list = self.plc_client.list_dbs()
+            
+            # Fetch sizes
+            self.dbs_sizes = {}
+            for db in self.dbs_list:
+                try:
+                    self.dbs_sizes[db] = self.plc_client.get_db_size(db)
+                except Exception:
+                    self.dbs_sizes[db] = 0
+                    
+            self.populate_blocks_table()
+            self.update_project_tree_online()
+            
+            cpu_info = self.plc_client.get_cpu_info()
+            self.update_status_bar(
+                f"Connesso a {self.plc_client.ip} | CPU: {cpu_info.get('ModuleTypeName', 'N/A')} "
+                f"| Seriale: {cpu_info.get('SerialNumber', 'N/A')}"
+            )
+        except Exception as e:
+            QMessageBox.warning(self, "Rilevamento Blocchi Fallito", f"Connesso al PLC, ma non è stato possibile listare i DB:\n{str(e)}")
+            self.update_status_bar(f"Connesso a {self.plc_client.ip} (Nessun DB letto)")
+
+    def on_disconnected(self):
+        self.connect_btn.setText("Connetti")
+        self.connect_btn.setEnabled(True)
+        self.connect_act.setText("Connetti")
+        
+        # Re-enable inputs
+        self.ip_input.setEnabled(True)
+        self.rack_input.setEnabled(True)
+        self.slot_input.setEnabled(True)
+        self.sim_check.setEnabled(True)
+        
+        # Disable backup actions
+        self.backup_selected_btn.setEnabled(False)
+        self.backup_all_btn.setEnabled(False)
+        
+        # Clear tables and lists
+        self.blocks_table.setRowCount(0)
+        self.dbs_list = []
+        self.dbs_sizes = {}
+        
+        # Stop DB viewer monitoring
+        self.db_viewer_tab.monitor_checkbox.setChecked(False)
+        self.db_viewer_tab.monitor_checkbox.setEnabled(False)
+        
+        self.init_project_tree()
+        self.update_status_bar("Disconnesso.")
+
+    def check_connection_hb(self):
+        # Periodically verifies if connection dropped in background
+        if self.plc_client.is_connected():
+            if not self.plc_client.simulate:
+                # Active check
+                try:
+                    self.plc_client.client.get_connected()
+                except Exception:
+                    self.on_disconnected()
+                    QMessageBox.warning(self, "Connessione Persa", "La connessione con il PLC è stata interrotta.")
+        else:
+            if self.connect_btn.text() == "Disconnetti":
+                # State mismatch, handle it
+                self.on_disconnected()
+
+    def populate_blocks_table(self):
+        self.blocks_table.setRowCount(len(self.dbs_list))
+        
+        for i, db in enumerate(self.dbs_list):
+            # Checkbox for backup selection
+            chk_widget = QWidget()
+            chk_layout = QHBoxLayout(chk_widget)
+            chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chk_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox = QCheckBox()
+            checkbox.setChecked(True)
+            chk_layout.addWidget(checkbox)
+            self.blocks_table.setCellWidget(i, 0, chk_widget)
+            
+            # DB Number
+            db_item = QTableWidgetItem(str(db))
+            db_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            db_item.setIcon(get_custom_icon("db"))
+            db_item.setFlags(db_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.blocks_table.setItem(i, 1, db_item)
+            
+            # Size
+            size_item = QTableWidgetItem(str(self.dbs_sizes.get(db, 0)))
+            size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            size_item.setFlags(size_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.blocks_table.setItem(i, 2, size_item)
+            
+            # Description (editable)
+            desc_item = QTableWidgetItem(f"Blocco Dati DB{db}")
+            self.blocks_table.setItem(i, 3, desc_item)
+
+    def set_table_selection(self, select):
+        for row in range(self.blocks_table.rowCount()):
+            chk_widget = self.blocks_table.cellWidget(row, 0)
+            if chk_widget:
+                checkbox = chk_widget.layout().itemAt(0).widget()
+                if checkbox:
+                    checkbox.setChecked(select)
+
+    def get_selected_table_dbs(self):
+        selected_dbs = []
+        for row in range(self.blocks_table.rowCount()):
+            chk_widget = self.blocks_table.cellWidget(row, 0)
+            if chk_widget:
+                checkbox = chk_widget.layout().itemAt(0).widget()
+                if checkbox and checkbox.isChecked():
+                    db_num_item = self.blocks_table.item(row, 1)
+                    if db_num_item:
+                        selected_dbs.append(int(db_num_item.text()))
+        return selected_dbs
+
+    def backup_selected_dbs(self):
+        dbs_to_backup = self.get_selected_table_dbs()
+        if not dbs_to_backup:
+            QMessageBox.warning(self, "Nessun DB selezionato", "Seleziona almeno un DB da includere nel backup snapshot.")
+            return
+        self.execute_backup(dbs_to_backup)
+
+    def backup_all_dbs(self):
+        self.execute_backup(self.dbs_list)
+
+    def execute_backup(self, dbs_list):
+        if not self.plc_client.is_connected():
+            QMessageBox.warning(self, "Non connesso", "Devi connetterti al PLC per effettuare il backup.")
+            return
+            
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Salva Snapshot S7", f"Snapshot_S7_{datetime.date.today().strftime('%Y%m%d')}.s7d", "S7 Snapshot Files (*.s7d *.json)"
+        )
+        if not filepath:
+            return
+            
+        self.update_status_bar("Esecuzione backup snapshot...")
+        
+        try:
+            backup_data = {
+                "plc_ip": self.plc_client.ip,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "is_simulated": self.plc_client.simulate,
+                "dbs": {}
+            }
+            
+            for db in dbs_list:
+                size = self.dbs_sizes.get(db, 0)
+                if size == 0:
+                    continue
+                    
+                data = self.plc_client.read_db_bytes(db, size)
+                
+                # Convert bytearray to hex string for portable storage
+                backup_data["dbs"][str(db)] = {
+                    "size": size,
+                    "data": data.hex().upper()
+                }
+                
+            # Write to JSON file
+            with open(filepath, 'w') as f:
+                json.dump(backup_data, f, indent=4)
+                
+            self.update_status_bar(f"Backup completato con successo: {len(dbs_list)} DB scritti in file.")
+            QMessageBox.information(
+                self, "Backup Completato",
+                f"Backup di {len(dbs_list)} Data Blocks salvato correttamente in:\n{filepath}"
+            )
+        except Exception as e:
+            self.update_status_bar("Backup fallito.")
+            QMessageBox.critical(self, "Errore Backup", f"Si è verificato un errore durante la lettura/scrittura del backup:\n{str(e)}")
+
+    def restore_from_file(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Apri Snapshot S7", "", "S7 Snapshot Files (*.s7d *.json);;All Files (*)"
+        )
+        if not filepath:
+            return
+            
+        try:
+            with open(filepath, 'r') as f:
+                backup_data = json.load(f)
+                
+            if "dbs" not in backup_data:
+                raise ValueError("Il file snapshot non è nel formato corretto.")
+                
+            dbs_in_file = list(backup_data["dbs"].keys())
+            
+            # Show a dialog with checklist of DBs to restore
+            from PyQt6.QtWidgets import QDialog, QListWidget, QListWidgetItem
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Ripristina Snapshot")
+            dialog.setMinimumSize(400, 300)
+            
+            diag_layout = QVBoxLayout(dialog)
+            diag_layout.addWidget(QLabel("<b>Seleziona i Data Block da ripristinare sul PLC:</b>"))
+            
+            list_widget = QListWidget()
+            for db_str in dbs_in_file:
+                db_num = int(db_str)
+                size = backup_data["dbs"][db_str].get("size", 0)
+                item = QListWidgetItem(f"DB {db_num} ({size} byte)")
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked)
+                item.setData(Qt.ItemDataRole.UserRole, db_num)
+                list_widget.addItem(item)
+                
+            diag_layout.addWidget(list_widget)
+            
+            btn_layout = QHBoxLayout()
+            ok_btn = QPushButton("Ripristina Selezionati nel PLC")
+            ok_btn.clicked.connect(dialog.accept)
+            btn_layout.addWidget(ok_btn)
+            
+            cancel_btn = QPushButton("Annulla")
+            cancel_btn.clicked.connect(dialog.reject)
+            btn_layout.addWidget(cancel_btn)
+            
+            diag_layout.addLayout(btn_layout)
+            
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+                
+            # Collect selected DBs to restore
+            selected_dbs_restore = []
+            for row in range(list_widget.count()):
+                item = list_widget.item(row)
+                if item.checkState() == Qt.CheckState.Checked:
+                    selected_dbs_restore.append(item.data(Qt.ItemDataRole.UserRole))
+                    
+            if not selected_dbs_restore:
+                QMessageBox.warning(self, "Nessun blocco", "Nessun DB selezionato per il ripristino.")
+                return
+                
+            # Perform connection check
+            if not self.plc_client.is_connected():
+                QMessageBox.warning(self, "Non Connesso", "Devi connetterti al PLC prima di poter scrivere i dati.")
+                return
+                
+            confirm = QMessageBox.question(
+                self, "Conferma Ripristino",
+                f"ATTENZIONE: Si sta per sovrascrivere la memoria di {len(selected_dbs_restore)} DB sul PLC live!\n"
+                "Questa operazione modificherà i valori in esecuzione. Vuoi procedere?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if confirm == QMessageBox.StandardButton.No:
+                return
+                
+            # Write bytes to PLC
+            self.update_status_bar("Scrittura ripristino nel PLC in corso...")
+            success_count = 0
+            
+            for db in selected_dbs_restore:
+                db_str = str(db)
+                hex_data = backup_data["dbs"][db_str]["data"]
+                byte_data = bytearray.fromhex(hex_data)
+                
+                self.plc_client.write_db_bytes(db, byte_data)
+                success_count += 1
+                
+            self.update_status_bar(f"Ripristino completato: {success_count} DB riscritti nel PLC.")
+            QMessageBox.information(
+                self, "Ripristino Completato",
+                f"Ripristino di {success_count} DB eseguito con successo sul PLC."
+            )
+            
+            # Refresh live view if viewing the same DB
+            if self.tabs.currentIndex() == 1 and self.db_viewer_tab.db_number in selected_dbs_restore:
+                self.db_viewer_tab.read_full_db()
+                
+        except Exception as e:
+            self.update_status_bar("Ripristino fallito.")
+            QMessageBox.critical(self, "Errore Ripristino", f"Impossibile completare il ripristino:\n{str(e)}")
+
+    def open_accessible_nodes(self):
+        dialog = NodesDialog(self, simulate=self.plc_client.simulate)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Load found IP into toolbar
+            self.ip_input.setText(dialog.selected_ip)
+            self.rack_input.setValue(dialog.selected_rack)
+            self.slot_input.setValue(dialog.selected_slot)
+            
+            # Auto-connect
+            if not self.plc_client.is_connected():
+                self.toggle_connection()
+
+    def open_comparison_window(self):
+        # We pass self.dbs_structures so CompareWindow can show structured variables if defined
+        dialog = CompareWindow(
+            self, 
+            simulate=self.plc_client.simulate, 
+            plc_client=self.plc_client,
+            parent_dbs_structures=self.dbs_structures
+        )
+        dialog.exec()
+
+    def on_structures_changed(self, db_num, variables):
+        # Store variable mappings globally so they persist and are shared with the CompareWindow
+        self.dbs_structures[db_num] = variables
+
+    def update_status_bar(self, text):
+        sim_indicator = "[SIMULAZIONE] " if self.plc_client.simulate else ""
+        self.status.showMessage(f"Stato: {sim_indicator}{text}")
+
+    def show_about(self):
+        QMessageBox.about(
+            self, "Informazioni su IstanteS7",
+            "<h3>IstanteS7 v1.0.0</h3>"
+            "<p>Applicazione portable per il backup, ripristino e monitoraggio live "
+            "dei Data Blocks (DB) per PLC Siemens Simatic S7-300 e S7-400.</p>"
+            "<p>Stile grafico ispirato a <i>Siemens Simatic Manager Step 7</i>.</p>"
+            "<p>Sviluppato in Python con PyQt6 e python-snap7 pure-python library.</p>"
+        )
