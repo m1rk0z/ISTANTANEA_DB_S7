@@ -96,7 +96,7 @@ class PLCClient:
             logger.error(f"Failed to read CPU info: {e}")
             raise PLCCommError(f"Failed to read CPU info: {str(e)}")
 
-    def list_dbs(self, start=1, end=500):
+    def list_dbs(self, start=1, end=100):
         if not self.is_connected():
             raise PLCCommError("Not connected to PLC.")
             
@@ -105,15 +105,9 @@ class PLCClient:
             return sorted(list(self.sim_dbs.keys()))
             
         # Determine the BlockType code (0x41 for DB)
-        block_type = None
-        for attr in ['BlockType', 'Block']:
-            if hasattr(snap7.types, attr):
-                block_type_class = getattr(snap7.types, attr)
-                if hasattr(block_type_class, 'DB'):
-                    block_type = getattr(block_type_class, 'DB')
-                    break
-        if block_type is None:
-            block_type = 0x41  # Fallback
+        block_type = 0x41
+        if hasattr(snap7, 'Block') and hasattr(snap7.Block, 'DB'):
+            block_type = snap7.Block.DB
 
         # Method 1: Try official list_blocks_of_type
         try:
@@ -197,15 +191,9 @@ class PLCClient:
                 return len(self.sim_dbs[db_number])
             return 0
             
-        block_type = None
-        for attr in ['BlockType', 'Block']:
-            if hasattr(snap7.types, attr):
-                block_type_class = getattr(snap7.types, attr)
-                if hasattr(block_type_class, 'DB'):
-                    block_type = getattr(block_type_class, 'DB')
-                    break
-        if block_type is None:
-            block_type = 0x41
+        block_type = 0x41
+        if hasattr(snap7, 'Block') and hasattr(snap7.Block, 'DB'):
+            block_type = snap7.Block.DB
 
         try:
             info = self.client.get_block_info(block_type, db_number)

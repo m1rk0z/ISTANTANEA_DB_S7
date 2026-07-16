@@ -32,10 +32,7 @@ class ConnectWorker(QThread):
             dbs_list = self.plc_client.list_dbs()
             dbs_sizes = {}
             for db_num in dbs_list:
-                try:
-                    dbs_sizes[db_num] = self.plc_client.get_db_size(db_num)
-                except Exception:
-                    dbs_sizes[db_num] = 100
+                dbs_sizes[db_num] = 0  # To be probed on-demand
             self.connected.emit(dbs_list, dbs_sizes)
         except Exception as e:
             self.failed.emit(str(e))
@@ -54,24 +51,99 @@ class DBScanWorker(QThread):
 
     def run(self):
         found_dbs = []
-        try:
-            for db_num in range(self.start_val, self.end_val + 1):
+        if self.plc_client.simulate:
+            # Simulation mode scan
+            total = self.end_val - self.start_val + 1
+            mock_dbs = {1: 14, 2: 14, 3: 140, 4: 44, 5: 44, 6: 18, 7: 28, 8: 28, 9: 28, 10: 192, 11: 92, 12: 400, 13: 10, 40: 28, 500: 100, 1000: 50}
+            for idx, db_num in enumerate(range(self.start_val, self.end_val + 1)):
                 if self.is_cancelled:
                     break
-                self.progress.emit(db_num, self.end_val)
-                try:
-                    self.plc_client.client.db_read(db_num, 0, 1)
+                if idx % 100 == 0 or db_num == self.end_val:
+                    self.progress.emit(db_num, self.end_val)
+                if db_num in mock_dbs:
+                    self.db_found.emit(db_num, mock_dbs[db_num])
+                    found_dbs.append(db_num)
+                time.sleep(0.0001)
+            self.finished.emit(sorted(found_dbs))
+            return
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import snap7
+        
+        total = self.end_val - self.start_val + 1
+        db_numbers = list(range(self.start_val, self.end_val + 1))
+        
+        # Use up to 10 parallel client threads to scan S7 DB range
+        num_workers = min(10, total)
+        clients = []
+        
+        for _ in range(num_workers):
+            c = snap7.client.Client()
+            try:
+                c.connect(self.plc_client.ip, self.plc_client.rack, self.plc_client.slot)
+                clients.append(c)
+            except Exception:
+                pass
+                
+        if not clients:
+            self.finished.emit([])
+            return
+            
+        active_count = len(clients)
+        
+        def scan_single_db(db_num, worker_idx):
+            if self.is_cancelled:
+                return db_num, False, 0
+            c = clients[worker_idx % active_count]
+            try:
+                # Probe DB existence
+                c.db_read(db_num, 0, 1)
+                
+                # Success! Perform binary search to probe DB size
+                low = 1
+                high = 65535
+                detected = 0
+                while low <= high:
+                    if self.is_cancelled:
+                        break
+                    mid = (low + high) // 2
                     try:
-                        size = self.plc_client.get_db_size(db_num)
+                        c.db_read(db_num, 0, mid)
+                        detected = mid
+                        low = mid + 1
                     except Exception:
-                        size = 100
+                        high = mid - 1
+                
+                size = detected if detected > 0 else 100
+                return db_num, True, size
+            except Exception:
+                return db_num, False, 0
+
+        completed = 0
+        with ThreadPoolExecutor(max_workers=active_count) as executor:
+            futures = {executor.submit(scan_single_db, db_num, idx): db_num for idx, db_num in enumerate(db_numbers)}
+            
+            for future in as_completed(futures):
+                if self.is_cancelled:
+                    break
+                completed += 1
+                if completed % 50 == 0 or completed == total:
+                    db_num = futures[future]
+                    self.progress.emit(db_num, self.end_val)
+                    
+                db_num, found, size = future.result()
+                if found:
                     self.db_found.emit(db_num, size)
                     found_dbs.append(db_num)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        self.finished.emit(found_dbs)
+                    
+        # Cleanup clients
+        for c in clients:
+            try:
+                c.disconnect()
+            except Exception:
+                pass
+                
+        self.finished.emit(sorted(found_dbs))
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -376,6 +448,18 @@ class MainWindow(QMainWindow):
         elif db_num is not None:
             self.tabs.setCurrentIndex(1) # Go to individual DB mapper
             size = self.dbs_sizes.get(db_num, 0)
+            if size <= 0:
+                self.update_status_bar(f"Rilevamento dimensione DB {db_num} in corso...")
+                try:
+                    size = self.plc_client.get_db_size(db_num)
+                except Exception:
+                    size = 100
+                self.dbs_sizes[db_num] = size
+                for row in range(self.blocks_table.rowCount()):
+                    row_db_item = self.blocks_table.item(row, 1)
+                    if row_db_item and int(row_db_item.text()) == db_num:
+                        self.blocks_table.item(row, 2).setText(str(size))
+                        break
             self.db_viewer_tab.set_active_db(db_num, size)
 
     def on_block_row_double_clicked(self, item):
@@ -384,6 +468,14 @@ class MainWindow(QMainWindow):
         if db_num_item:
             db_num = int(db_num_item.text())
             size = self.dbs_sizes.get(db_num, 0)
+            if size <= 0:
+                self.update_status_bar(f"Rilevamento dimensione DB {db_num} in corso...")
+                try:
+                    size = self.plc_client.get_db_size(db_num)
+                except Exception:
+                    size = 100
+                self.dbs_sizes[db_num] = size
+                self.blocks_table.item(row, 2).setText(str(size))
             
             # Switch tabs and load viewer
             self.tabs.setCurrentIndex(1)
