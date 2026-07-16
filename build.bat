@@ -23,7 +23,7 @@ echo [INFO] Building standalone executable with PyInstaller...
 :: --clean: clean PyInstaller cache before building
 :: --name: name of the output executable
 :: --add-data: if we had asset folders, we would add them here.
-pyinstaller --onefile --noconsole --clean --name="IstanteS7" src/main.py
+pyinstaller --onefile --noconsole --clean --name="IstanteS7" --paths=src src/main.py
 
 if %errorlevel% eq 0 (
     echo.
