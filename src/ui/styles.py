@@ -1,247 +1,328 @@
-# Stylesheet and UI styling constants for Simatic Manager Retro Theme
+# Modern dynamic stylesheet for Light & Dark mode support based on OS themes
+from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtCore import Qt
 
-# Siemens Branding Colors
-SIEMENS_TEAL = "#009999"      # Classic Siemens Petrol Teal
-SIEMENS_DARK = "#006666"      # Darker Petrol
-WIN_GRAY = "#f0f0f0"          # Classic Windows Gray background
-WIN_BORDER = "#a0a0a0"        # Border gray
-TEXT_DARK = "#202020"         # Main dark text color
+def is_system_dark_mode():
+    """
+    Detects if the system is currently using Dark Mode.
+    Supports PyQt6 native color schemes and fallback to Windows registry.
+    """
+    try:
+        # Check standard PyQt6 system palette/scheme if available (6.5+)
+        scheme = QGuiApplication.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return True
+        elif scheme == Qt.ColorScheme.Light:
+            return False
+    except Exception:
+        pass
 
-RETRO_STYLE = f"""
-/* Main Application Frame */
-QMainWindow {{
-    background-color: {WIN_GRAY};
-}}
+    # Windows registry check fallback
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return value == 0
+    except Exception:
+        return False
 
-/* General Labels */
-QLabel {{
-    color: {TEXT_DARK};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
+def get_modern_stylesheet(is_dark=None):
+    """
+    Generates a high-quality modern stylesheet supporting light and dark themes.
+    If is_dark is None, it dynamically auto-detects from the OS.
+    """
+    if is_dark is None:
+        is_dark = is_system_dark_mode()
 
-QLabel:disabled {{
-    color: #707070;
-}}
+    if is_dark:
+        # Modern Premium Dark Mode (Sleek Zinc / Teal Accent)
+        colors = {
+            "BG_MAIN": "#18181b",
+            "BG_CARD": "#27272a",
+            "BG_TREE_TABLE": "#18181b",
+            "BG_HEADER": "#202023",
+            "BG_BUTTON": "#27272a",
+            "BG_DISABLED": "#202023",
+            "BG_INPUT": "#202023",
+            "TEXT": "#f4f4f5",
+            "TEXT_MUTED": "#a1a1aa",
+            "TEXT_DISABLED": "#52525b",
+            "BORDER": "#3f3f46",
+            "GRIDLINE": "#27272a",
+            "ACCENT": "#00cccc",
+            "HOVER": "#1e3d3d",
+            "SCROLL_HANDLE": "#3f3f46"
+        }
+    else:
+        # Modern Premium Light Mode (Sleek Gray-50 / Petrol Teal Accent)
+        colors = {
+            "BG_MAIN": "#f9fafb",
+            "BG_CARD": "#ffffff",
+            "BG_TREE_TABLE": "#ffffff",
+            "BG_HEADER": "#f3f4f6",
+            "BG_BUTTON": "#ffffff",
+            "BG_DISABLED": "#f3f4f6",
+            "BG_INPUT": "#ffffff",
+            "TEXT": "#1f2937",
+            "TEXT_MUTED": "#6b7280",
+            "TEXT_DISABLED": "#9ca3af",
+            "BORDER": "#e5e7eb",
+            "GRIDLINE": "#f3f4f6",
+            "ACCENT": "#008080",
+            "HOVER": "#e0f2f1",
+            "SCROLL_HANDLE": "#d1d5db"
+        }
 
-/* Checkboxes */
-QCheckBox {{
-    color: {TEXT_DARK};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
+    return f"""
+    /* Main Application Frame */
+    QMainWindow {{
+        background-color: {colors["BG_MAIN"]};
+    }}
 
-QCheckBox:disabled {{
-    color: #707070;
-}}
+    /* General Labels */
+    QLabel {{
+        color: {colors["TEXT"]};
+        font-size: 10pt;
+        font-family: "Segoe UI", sans-serif;
+    }}
+    QLabel:disabled {{
+        color: {colors["TEXT_DISABLED"]};
+    }}
 
-/* Menu Bar */
-QMenuBar {{
-    background-color: {WIN_GRAY};
-    color: {TEXT_DARK};
-    border-bottom: 1px solid {WIN_BORDER};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
+    /* Checkboxes */
+    QCheckBox {{
+        color: {colors["TEXT"]};
+        font-size: 10pt;
+        font-family: "Segoe UI", sans-serif;
+    }}
+    QCheckBox:disabled {{
+        color: {colors["TEXT_DISABLED"]};
+    }}
 
-QMenuBar::item {{
-    background: transparent;
-    padding: 4px 10px;
-}}
+    /* Menu Bar */
+    QMenuBar {{
+        background-color: {colors["BG_MAIN"]};
+        color: {colors["TEXT"]};
+        border-bottom: 1px solid {colors["BORDER"]};
+        font-size: 10pt;
+        font-family: "Segoe UI", sans-serif;
+    }}
+    QMenuBar::item {{
+        background: transparent;
+        padding: 6px 12px;
+    }}
+    QMenuBar::item:selected {{
+        background-color: {colors["ACCENT"]};
+        color: white;
+    }}
 
-QMenuBar::item:selected {{
-    background-color: {SIEMENS_TEAL};
-    color: white;
-}}
+    /* Tool Bar */
+    QToolBar {{
+        background-color: {colors["BG_CARD"]};
+        border-bottom: 1px solid {colors["BORDER"]};
+        spacing: 12px;
+        padding: 6px;
+    }}
+    QToolBar QLabel {{
+        color: {colors["TEXT"]};
+        font-weight: bold;
+    }}
+    QToolBar QToolButton {{
+        background-color: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 6px 10px;
+        color: {colors["TEXT"]};
+    }}
+    QToolBar QToolButton:hover {{
+        background-color: {colors["HOVER"]};
+        border: 1px solid {colors["ACCENT"]};
+    }}
+    QToolBar QToolButton:pressed {{
+        background-color: {colors["ACCENT"]};
+        color: white;
+    }}
 
-/* Tool Bar */
-QToolBar {{
-    background-color: {WIN_GRAY};
-    border-bottom: 1px solid {WIN_BORDER};
-    spacing: 8px;
-    padding: 6px;
-}}
+    /* Status Bar */
+    QStatusBar {{
+        background-color: {colors["BG_MAIN"]};
+        border-top: 1px solid {colors["BORDER"]};
+        color: {colors["TEXT"]};
+        font-size: 9pt;
+    }}
 
-QToolBar QLabel {{
-    color: {TEXT_DARK};
-    font-weight: bold;
-}}
+    /* Splitters */
+    QSplitter::handle {{
+        background-color: {colors["BORDER"]};
+    }}
 
-QToolBar QLabel:disabled {{
-    color: #707070;
-}}
+    /* Tree and Table Viewers */
+    QTreeView, QTableView {{
+        background-color: {colors["BG_TREE_TABLE"]};
+        color: {colors["TEXT"]};
+        border: 1px solid {colors["BORDER"]};
+        gridline-color: {colors["GRIDLINE"]};
+        selection-background-color: {colors["ACCENT"]};
+        selection-color: white;
+        font-size: 10pt;
+        font-family: "Segoe UI", sans-serif;
+    }}
+    QTreeView::item, QTableView::item {{
+        padding: 6px;
+        border-bottom: 1px solid {colors["GRIDLINE"]};
+    }}
+    QTreeView::item:hover, QTableView::item:hover {{
+        background-color: {colors["HOVER"]};
+        color: {colors["TEXT"]};
+    }}
 
-QToolBar QToolButton {{
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    padding: 4px;
-    color: {TEXT_DARK};
-}}
+    /* Table Headers */
+    QHeaderView::section {{
+        background-color: {colors["BG_HEADER"]};
+        color: {colors["TEXT"]};
+        padding: 8px;
+        border: 1px solid {colors["BORDER"]};
+        font-weight: bold;
+        font-size: 10pt;
+    }}
 
-QToolBar QToolButton:hover {{
-    background-color: #e0f2f1;
-    border: 1px solid {SIEMENS_TEAL};
-}}
+    /* Tab Widget and Tab Bar */
+    QTabWidget::pane {{
+        border: 1px solid {colors["BORDER"]};
+        background-color: {colors["BG_CARD"]};
+    }}
+    QTabBar::tab {{
+        background-color: {colors["BG_HEADER"]};
+        color: {colors["TEXT_MUTED"]};
+        border: 1px solid {colors["BORDER"]};
+        border-bottom: none;
+        padding: 8px 18px;
+        margin-right: 4px;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
+        font-size: 10pt;
+    }}
+    QTabBar::tab:selected {{
+        background-color: {colors["BG_CARD"]};
+        color: {colors["TEXT"]};
+        border-bottom: 2px solid {colors["ACCENT"]};
+        font-weight: bold;
+    }}
+    QTabBar::tab:hover {{
+        background-color: {colors["HOVER"]};
+        color: {colors["TEXT"]};
+    }}
 
-QToolBar QToolButton:pressed {{
-    background-color: #b2dfdb;
-}}
+    /* Push Buttons */
+    QPushButton {{
+        background-color: {colors["BG_BUTTON"]};
+        color: {colors["TEXT"]};
+        border: 1px solid {colors["BORDER"]};
+        border-radius: 4px;
+        padding: 6px 16px;
+        font-size: 10pt;
+        font-weight: 500;
+    }}
+    QPushButton:hover {{
+        background-color: {colors["HOVER"]};
+        border-color: {colors["ACCENT"]};
+    }}
+    QPushButton:pressed {{
+        background-color: {colors["ACCENT"]};
+        color: white;
+    }}
+    QPushButton:disabled {{
+        background-color: {colors["BG_DISABLED"]};
+        color: {colors["TEXT_DISABLED"]};
+        border-color: {colors["BORDER"]};
+    }}
 
-/* Status Bar */
-QStatusBar {{
-    background-color: {WIN_GRAY};
-    border-top: 1px solid {WIN_BORDER};
-    color: {TEXT_DARK};
-    font-size: 9pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
+    /* Inputs */
+    QLineEdit, QComboBox, QSpinBox {{
+        background-color: {colors["BG_INPUT"]};
+        border: 1px solid {colors["BORDER"]};
+        border-radius: 4px;
+        padding: 4px;
+        color: {colors["TEXT"]};
+        font-size: 10pt;
+        min-height: 28px;
+    }}
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+        border: 1px solid {colors["ACCENT"]};
+    }}
+    QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
+        background-color: {colors["BG_DISABLED"]};
+        color: {colors["TEXT_DISABLED"]};
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {colors["BG_INPUT"]};
+        color: {colors["TEXT"]};
+        border: 1px solid {colors["BORDER"]};
+        selection-background-color: {colors["ACCENT"]};
+        selection-color: white;
+    }}
 
-/* Splitters */
-QSplitter::handle {{
-    background-color: {WIN_BORDER};
-}}
+    /* Group Boxes */
+    QGroupBox {{
+        border: 1px solid {colors["BORDER"]};
+        border-radius: 6px;
+        margin-top: 14px;
+        font-weight: bold;
+        color: {colors["ACCENT"]};
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        left: 10px;
+        padding: 0 4px;
+    }}
 
-/* Tree and Table Viewers */
-QTreeView, QTableView {{
-    background-color: white;
-    color: {TEXT_DARK};
-    border: 1px solid {WIN_BORDER};
-    gridline-color: #e0e0e0;
-    selection-background-color: {SIEMENS_TEAL};
-    selection-color: white;
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
+    /* Scrollbars */
+    QScrollBar:vertical {{
+        border: none;
+        background: {colors["BG_MAIN"]};
+        width: 10px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {colors["SCROLL_HANDLE"]};
+        min-height: 20px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {colors["ACCENT"]};
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        border: none;
+        background: none;
+    }}
 
-QTreeView::item, QTableView::item {{
-    padding: 4px;
-}}
+    QScrollBar:horizontal {{
+        border: none;
+        background: {colors["BG_MAIN"]};
+        height: 10px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {colors["SCROLL_HANDLE"]};
+        min-width: 20px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: {colors["ACCENT"]};
+    }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+        border: none;
+        background: none;
+    }}
 
-/* Table Headers */
-QHeaderView::section {{
-    background-color: #e0e0e0;
-    color: {TEXT_DARK};
-    padding: 6px;
-    border: 1px solid {WIN_BORDER};
-    font-weight: bold;
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
-
-/* Tab Widget and Tab Bar */
-QTabWidget::pane {{
-    border: 1px solid {WIN_BORDER};
-    background-color: white;
-}}
-
-QTabBar::tab {{
-    background-color: #e0e0e0;
-    color: #404040;
-    border: 1px solid {WIN_BORDER};
-    border-bottom: none;
-    padding: 8px 16px;
-    margin-right: 3px;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
-
-QTabBar::tab:selected {{
-    background-color: white;
-    color: #000000;
-    border-bottom: 1px solid white;
-    font-weight: bold;
-}}
-
-QTabBar::tab:hover {{
-    background-color: #eaeaea;
-    color: #000000;
-}}
-
-/* Push Buttons */
-QPushButton {{
-    background-color: {WIN_GRAY};
-    color: {TEXT_DARK};
-    border: 1px solid {WIN_BORDER};
-    border-radius: 3px;
-    padding: 6px 16px;
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
-
-QPushButton:hover {{
-    background-color: #e2f4f4;
-    border-color: {SIEMENS_TEAL};
-}}
-
-QPushButton:pressed {{
-    background-color: #cdeaea;
-}}
-
-QPushButton:disabled {{
-    background-color: #e0e0e0;
-    color: #888888;
-    border-color: #c0c0c0;
-}}
-
-/* Inputs (LineEdits, SpinBoxes, ComboBoxes) */
-QLineEdit, QComboBox {{
-    background-color: white;
-    border: 1px solid {WIN_BORDER};
-    border-radius: 2px;
-    padding: 3px;
-    color: {TEXT_DARK};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-    min-height: 28px;
-    height: 28px;
-}}
-
-QLineEdit:focus, QComboBox:focus {{
-    border: 1px solid {SIEMENS_TEAL};
-}}
-
-QLineEdit:disabled, QComboBox:disabled {{
-    background-color: #e8e8e8;
-    color: #707070;
-}}
-
-/* Explicitly style QComboBox popup dropdown items to avoid white-text-on-white-background rendering bugs in Windows Dark Mode */
-QComboBox QAbstractItemView {{
-    background-color: white;
-    color: {TEXT_DARK};
-    border: 1px solid {WIN_BORDER};
-    selection-background-color: {SIEMENS_TEAL};
-    selection-color: white;
-}}
-
-/* Group Boxes */
-QGroupBox {{
-    border: 1px solid {WIN_BORDER};
-    border-radius: 4px;
-    margin-top: 12px;
-    font-weight: bold;
-    color: {SIEMENS_DARK};
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
-
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 10px;
-    padding: 0 4px;
-}}
-
-/* Dialog & QMessageBox Styles for correct contrast in Windows Dark/Light mode */
-QDialog, QMessageBox {{
-    background-color: {WIN_GRAY};
-    color: {TEXT_DARK};
-}}
-
-QMessageBox QLabel {{
-    color: {TEXT_DARK};
-    background-color: transparent;
-}}
-"""
+    /* Dialog & QMessageBox Styles */
+    QDialog, QMessageBox {{
+        background-color: {colors["BG_MAIN"]};
+        color: {colors["TEXT"]};
+    }}
+    QMessageBox QLabel {{
+        color: {colors["TEXT"]};
+        background-color: transparent;
+    }}
+    """

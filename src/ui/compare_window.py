@@ -220,57 +220,57 @@ class CompareWindow(QDialog):
             data_a = db_a["data"]
             data_b = db_b["data"]
             
-            # Check if we have a structure mapping for this DB
+            # Check if we have a structure mapping for this DB. If not, generate default WORD mapping.
             structure = self.dbs_structures.get(db_num, [])
-            
-            if structure:
-                # Structured comparison
-                for var in structure:
-                    name = var.get("name", "Var")
-                    offset = var.get("offset", 0.0)
-                    dtype = var.get("type", "BYTE")
-                    
-                    # Split offset
-                    offset_str = str(offset)
-                    if "." in offset_str:
-                        parts = offset_str.split('.')
-                        byte_off = int(parts[0])
-                        bit_off = int(parts[1])
-                    else:
-                        byte_off = int(offset)
-                        bit_off = 0
-                        
-                    val_a = parse_s7_data(dtype, data_a, byte_off, bit_off)
-                    val_b = parse_s7_data(dtype, data_b, byte_off, bit_off)
-                    
-                    if val_a is None or val_b is None:
-                        # Out of bounds or parsing error
-                        continue
-                        
-                    if val_a != val_b:
-                        self.differences.append({
-                            "db": db_num,
-                            "offset": f"{offset} ({name})",
-                            "type": dtype,
-                            "val_a": str(val_a),
-                            "val_b": str(val_b),
-                            "detail": "Valore variabile modificato"
-                        })
-            else:
-                # Raw Byte-by-Byte comparison (fall back to hex offsets)
+            if not structure:
                 min_size = min(len(data_a), len(data_b))
-                for i in range(min_size):
-                    byte_a = data_a[i]
-                    byte_b = data_b[i]
-                    if byte_a != byte_b:
-                        self.differences.append({
-                            "db": db_num,
-                            "offset": f"DBB {i}",
-                            "type": "BYTE (Hex)",
-                            "val_a": f"0x{byte_a:02X} ({byte_a})",
-                            "val_b": f"0x{byte_b:02X} ({byte_b})",
-                            "detail": "Byte modificato"
-                        })
+                structure = []
+                for offset in range(0, min_size - 1, 2):
+                    structure.append({
+                        "name": f"DBW{offset}",
+                        "type": "WORD",
+                        "offset": float(offset)
+                    })
+                if min_size % 2 != 0:
+                    offset = min_size - 1
+                    structure.append({
+                        "name": f"DBB{offset}",
+                        "type": "BYTE",
+                        "offset": float(offset)
+                    })
+            
+            # Perform structured comparison
+            for var in structure:
+                name = var.get("name", "Var")
+                offset = var.get("offset", 0.0)
+                dtype = var.get("type", "BYTE")
+                
+                # Split offset
+                offset_str = str(offset)
+                if "." in offset_str:
+                    parts = offset_str.split('.')
+                    byte_off = int(parts[0])
+                    bit_off = int(parts[1])
+                else:
+                    byte_off = int(offset)
+                    bit_off = 0
+                    
+                val_a = parse_s7_data(dtype, data_a, byte_off, bit_off)
+                val_b = parse_s7_data(dtype, data_b, byte_off, bit_off)
+                
+                if val_a is None or val_b is None:
+                    # Out of bounds or parsing error
+                    continue
+                    
+                if val_a != val_b:
+                    self.differences.append({
+                        "db": db_num,
+                        "offset": f"{offset} ({name})",
+                        "type": dtype,
+                        "val_a": str(val_a),
+                        "val_b": str(val_b),
+                        "detail": "Valore variabile modificato"
+                    })
                         
         self.populate_table()
 

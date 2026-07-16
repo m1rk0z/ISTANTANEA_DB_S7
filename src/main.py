@@ -24,6 +24,10 @@ def main():
     # Initialize PyQt application
     app = QApplication(sys.argv)
     
+    # Apply modern dynamic stylesheet based on system theme (Dark/Light mode)
+    from ui.styles import get_modern_stylesheet
+    app.setStyleSheet(get_modern_stylesheet())
+    
     # Launch main window
     window = MainWindow()
     window.show()

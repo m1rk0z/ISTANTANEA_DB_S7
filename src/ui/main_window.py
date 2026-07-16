@@ -10,7 +10,6 @@ import datetime
 import time
 
 from plc_comm import PLCClient, PLCCommError
-from ui.styles import RETRO_STYLE
 from ui.icons import get_custom_icon
 from ui.nodes_dialog import NodesDialog
 from ui.db_viewer import DBViewer
@@ -207,12 +206,10 @@ class ScanRangeDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Window properties
         self.setWindowTitle("IstanteS7 - Siemens S7 PLC Backup & Tool")
         self.setMinimumSize(1000, 650)
         self.setWindowIcon(get_custom_icon("plc"))
-        
-        # Style sheet
-        self.setStyleSheet(RETRO_STYLE)
         
         # S7 Comm client
         self.plc_client = PLCClient(simulate=False)
