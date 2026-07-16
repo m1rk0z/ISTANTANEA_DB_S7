@@ -411,6 +411,12 @@ class MainWindow(QMainWindow):
             rack = self.rack_input.value()
             slot = self.slot_input.value()
             
+            # Clear old lists for the new connection
+            self.blocks_table.setRowCount(0)
+            self.dbs_list = []
+            self.dbs_sizes = {}
+            self.init_project_tree()
+            
             self.update_status_bar(f"Connessione in corso a {ip}...")
             self.connect_btn.setEnabled(False)
             self.connect_btn.setText("Connessione...")
@@ -489,16 +495,10 @@ class MainWindow(QMainWindow):
         self.backup_selected_btn.setEnabled(False)
         self.backup_all_btn.setEnabled(False)
         
-        # Clear tables and lists
-        self.blocks_table.setRowCount(0)
-        self.dbs_list = []
-        self.dbs_sizes = {}
-        
         # Stop DB viewer monitoring
         self.db_viewer_tab.monitor_checkbox.setChecked(False)
         self.db_viewer_tab.monitor_checkbox.setEnabled(False)
         
-        self.init_project_tree()
         self.update_status_bar("Disconnesso.")
 
     def check_connection_hb(self):
@@ -790,6 +790,11 @@ class MainWindow(QMainWindow):
                     
                 # Directory profiles
                 self.profiles = config.get("profiles", [])
+                if not self.profiles:
+                    self.profiles = [
+                        {"name": "Simulatore Locale", "ip": "127.0.0.1", "rack": 0, "slot": 2, "simulate": True},
+                        {"name": "CPU Test (200.100.0.11)", "ip": "200.100.0.11", "rack": 0, "slot": 3, "simulate": False}
+                    ]
                 self.update_rubrica_combo()
             except Exception as e:
                 print(f"Error loading config: {e}")

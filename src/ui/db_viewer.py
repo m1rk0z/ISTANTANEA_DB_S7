@@ -121,6 +121,28 @@ class DBViewer(QWidget):
         self.variables = []
         self.table.setRowCount(0)
         
+        # Walk up parent chain to resolve MainWindow configuration
+        parent_window = self.parent()
+        while parent_window and not hasattr(parent_window, 'dbs_structures'):
+            parent_window = parent_window.parent()
+            
+        loaded_vars = []
+        if parent_window and hasattr(parent_window, 'dbs_structures') and db_num in parent_window.dbs_structures:
+            loaded_vars = list(parent_window.dbs_structures[db_num])
+            
+        if not loaded_vars:
+            # Generate default BYTE rows to show live values directly
+            for offset in range(size):
+                loaded_vars.append({
+                    "name": f"DB{db_num}.DBB{offset}",
+                    "type": "BYTE",
+                    "offset": float(offset)
+                })
+                
+        # Populate QTableWidget rows
+        for var in loaded_vars:
+            self.add_variable_row(var["name"], var["type"], var["offset"])
+            
         # Read initial values
         self.read_full_db()
 

@@ -187,42 +187,34 @@ QPushButton:disabled {{
 }}
 
 /* Inputs (LineEdits, SpinBoxes, ComboBoxes) */
-QLineEdit, QComboBox {{
+QLineEdit, QComboBox, QSpinBox {{
     background-color: white;
     border: 1px solid {WIN_BORDER};
     border-radius: 2px;
-    padding: 4px;
+    padding: 2px;
     color: {TEXT_DARK};
     font-size: 10pt;
     font-family: "Segoe UI", "Tahoma", sans-serif;
+    min-height: 24px;
+    height: 24px;
 }}
 
-QLineEdit:focus, QComboBox:focus {{
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
     border: 1px solid {SIEMENS_TEAL};
 }}
 
-QLineEdit:disabled, QComboBox:disabled {{
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
     background-color: #e8e8e8;
     color: #707070;
 }}
 
-/* Custom QSpinBox Styling to fix the Up/Down arrows rendering bug in Qt */
-QSpinBox {{
+/* Explicitly style QComboBox popup dropdown items to avoid white-text-on-white-background rendering bugs in Windows Dark Mode */
+QComboBox QAbstractItemView {{
     background-color: white;
-    border: 1px solid {WIN_BORDER};
-    border-radius: 2px;
     color: {TEXT_DARK};
-    font-size: 10pt;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
-}}
-
-QSpinBox:focus {{
-    border: 1px solid {SIEMENS_TEAL};
-}}
-
-QSpinBox:disabled {{
-    background-color: #e8e8e8;
-    color: #707070;
+    border: 1px solid {WIN_BORDER};
+    selection-background-color: {SIEMENS_TEAL};
+    selection-color: white;
 }}
 
 /* Group Boxes */
