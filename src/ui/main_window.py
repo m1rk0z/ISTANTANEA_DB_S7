@@ -144,6 +144,60 @@ class DBScanWorker(QThread):
                 
         self.finished.emit(sorted(found_dbs))
 
+class ScanRangeDialog(QDialog):
+    def __init__(self, parent=None, default_start=1, default_end=65535):
+        super().__init__(parent)
+        self.setWindowTitle("Imposta Intervallo Scansione")
+        self.setMinimumWidth(380)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
+        
+        # Info note
+        info_label = QLabel(
+            "<b>Nota sulla velocità:</b> La scansione di intervalli molto grandi (es. fino a 65535) "
+            "può richiedere tempo a seconda della latenza di rete del PLC. "
+            "Ti consigliamo di limitare l'intervallo a quello realmente utilizzato."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666666; font-size: 9pt;")
+        layout.addWidget(info_label)
+        
+        # Form
+        form_layout = QGridLayout()
+        form_layout.setSpacing(8)
+        
+        form_layout.addWidget(QLabel("DB Iniziale:"), 0, 0)
+        self.start_input = QSpinBox()
+        self.start_input.setRange(1, 65535)
+        self.start_input.setValue(default_start)
+        self.start_input.setFixedHeight(28)
+        form_layout.addWidget(self.start_input, 0, 1)
+        
+        form_layout.addWidget(QLabel("DB Finale:"), 1, 0)
+        self.end_input = QSpinBox()
+        self.end_input.setRange(1, 65535)
+        self.end_input.setValue(default_end)
+        self.end_input.setFixedHeight(28)
+        form_layout.addWidget(self.end_input, 1, 1)
+        
+        layout.addLayout(form_layout)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        self.ok_btn = QPushButton("Avvia Scansione")
+        self.ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.ok_btn)
+        
+        self.cancel_btn = QPushButton("Annulla")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(btn_layout)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -530,6 +584,16 @@ class MainWindow(QMainWindow):
         self.dbs_list = dbs_list
         self.dbs_sizes = dbs_sizes
         self.on_connected()
+        
+        # Automatically trigger background scan for all DBs (1-65535) if the PLC block listing returned nothing (e.g. S7-400 fallback)
+        if not dbs_list and not self.plc_client.simulate:
+            self.update_status_bar("Connesso. Avvio scansione automatica DB (1-65535) in corso...")
+            self.scan_range_btn.setText("Ferma Scansione")
+            self.db_scan_worker = DBScanWorker(self.plc_client, 1, 65535)
+            self.db_scan_worker.progress.connect(self.on_db_scan_progress)
+            self.db_scan_worker.db_found.connect(self.on_db_found)
+            self.db_scan_worker.finished.connect(self.on_db_scan_finished)
+            self.db_scan_worker.start()
 
     def on_connect_failed(self, error_msg):
         self.on_disconnected()
@@ -574,6 +638,10 @@ class MainWindow(QMainWindow):
             self.update_status_bar(f"Connesso a {self.plc_client.ip}")
 
     def on_disconnected(self):
+        if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
+            self.db_scan_worker.is_cancelled = True
+            self.db_scan_worker.wait()
+            
         self.connect_btn.setText("Connetti")
         self.connect_btn.setEnabled(True)
         self.connect_act.setText("Connetti")
@@ -1065,60 +1133,6 @@ class MainWindow(QMainWindow):
         self.populate_blocks_table()
         self.update_project_tree_online()
         self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")
-
-class ScanRangeDialog(QDialog):
-    def __init__(self, parent=None, default_start=1, default_end=65535):
-        super().__init__(parent)
-        self.setWindowTitle("Imposta Intervallo Scansione")
-        self.setMinimumWidth(380)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(12)
-        
-        # Info note
-        info_label = QLabel(
-            "<b>Nota sulla velocità:</b> La scansione di intervalli molto grandi (es. fino a 65535) "
-            "può richiedere tempo a seconda della latenza di rete del PLC. "
-            "Ti consigliamo di limitare l'intervallo a quello realmente utilizzato."
-        )
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666666; font-size: 9pt;")
-        layout.addWidget(info_label)
-        
-        # Form
-        form_layout = QGridLayout()
-        form_layout.setSpacing(8)
-        
-        form_layout.addWidget(QLabel("DB Iniziale:"), 0, 0)
-        self.start_input = QSpinBox()
-        self.start_input.setRange(1, 65535)
-        self.start_input.setValue(default_start)
-        self.start_input.setFixedHeight(28)
-        form_layout.addWidget(self.start_input, 0, 1)
-        
-        form_layout.addWidget(QLabel("DB Finale:"), 1, 0)
-        self.end_input = QSpinBox()
-        self.end_input.setRange(1, 65535)
-        self.end_input.setValue(default_end)
-        self.end_input.setFixedHeight(28)
-        form_layout.addWidget(self.end_input, 1, 1)
-        
-        layout.addLayout(form_layout)
-        
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        
-        self.ok_btn = QPushButton("Avvia Scansione")
-        self.ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(self.ok_btn)
-        
-        self.cancel_btn = QPushButton("Annulla")
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.cancel_btn)
-        
-        layout.addLayout(btn_layout)
 
     def toggle_db_range_scan(self):
         # If already running, cancel it

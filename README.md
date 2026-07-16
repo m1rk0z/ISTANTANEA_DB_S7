@@ -14,7 +14,10 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
    - Identificazione automatica del tipo di CPU, numero seriale e nome stazione tramite query diagnostiche SZL.
    
 2. **Backup Snapshot dei Data Block (DB):**
-   - Elenco dinamico di tutti i DB presenti all'interno del PLC con le rispettive dimensioni in byte.
+   - Connessione istantanea (sotto il secondo) grazie al caricamento dei DB asincrono e non bloccante.
+   - Scansione automatica in background della memoria PLC (fino a 65535 DB) all'avvio del collegamento qualora la CPU non supporti l'elenco nativo (come le famiglie S7-400), mantenendo l'interfaccia interattiva e reattiva fin dal primo istante.
+   - Scansione manuale di un intervallo personalizzato di DB (con default predefinito `1` a `65535`) con un pool parallelo ottimizzato a 6 thread che evita qualsiasi sovraccarico della CP del PLC.
+   - Elenco dinamico di tutti i DB rilevati sul PLC con le rispettive dimensioni reali in byte.
    - Selezione selettiva (tramite checkbox) o totale dei DB da salvare.
    - Salvataggio dello snapshot in un file compatto in formato `.s7d` (JSON-based, contenente i byte grezzi in formato esadecimale).
 
@@ -29,6 +32,7 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
 
 5. **Editor Mappa DB e Monitor Live:**
    - Possibilità di definire una struttura di mapping delle variabili per ciascun DB (assegnando nomi simbolici, tipi di dato e offset).
+   - Generazione automatica di variabili organizzate in blocchi **WORD a passi di 2** (`DBW0`, `DBW2`, `DBW4` ecc.) per i DB non ancora mappati, con offset formattati secondo lo standard Simatic Manager (`byte.bit`, es. `0.0`, `2.0`, `4.0`...).
    - Tipi di dato S7 supportati: `BOOL`, `BYTE`, `CHAR`, `INT`, `WORD`, `DINT`, `DWORD`, `REAL` (Float 32), `STRING` (Siemens string standard).
    - Importazione ed esportazione delle mappe in formato `.json`.
    - Monitoraggio ciclico in tempo reale (polling a 200ms, 500ms, 1s, 2s).
@@ -107,6 +111,7 @@ Per eseguire i test unitari:
 
 ## 🎨 Grafica e Design
 L'applicazione imita fedelmente il design classico di Simatic Manager:
+- Campi Rack e Slot implementati come ComboBox a scorrimento che garantiscono perfetta visibilità e clickability in qualsiasi risoluzione dello schermo e sia con Windows Light Mode che Dark Mode.
 - Albero del progetto sulla sinistra con icone dedicate per Progetto, PLC e Data Block (disegnate dinamicamente per garantire massima risoluzione e portabilità).
 - Barra dei menu e strumenti classica.
 - Colori coordinati con il brand Siemens (Teal/Petrolio `#009999` e grigio industriale `#f0f0f0`).

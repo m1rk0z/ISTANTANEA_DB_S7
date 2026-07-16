@@ -132,34 +132,8 @@ class PLCClient:
                         return sorted(list(res))
                     return [res]
             except Exception as ex:
-                logger.warning(f"Secondary block listing also failed: {ex}. Falling back to sequential range scanning...")
-                
-        # Method 2: Probing fallback (Browsing)
-        # Scan standard DB range sequentially using a single dedicated client to prevent PLC CP processor overload
-        found_dbs = []
-        logger.info(f"Scanning S7 DB range {start} to {end} sequentially...")
-        
-        c = snap7.client.Client()
-        try:
-            c.connect(self.ip, self.rack, self.slot)
-        except Exception:
-            c = self.client
-            
-        for db_num in range(start, end + 1):
-            try:
-                c.db_read(db_num, 0, 1)
-                found_dbs.append(db_num)
-            except Exception:
-                pass
-                
-        if c != self.client:
-            try:
-                c.disconnect()
-            except Exception:
-                pass
-                
-        logger.info(f"Probing found DBs: {found_dbs}")
-        return sorted(found_dbs)
+                logger.warning(f"Secondary block listing also failed: {ex}. Returning empty list for background scanning.")
+                return []
 
     def probe_db_size(self, db_number):
         """
