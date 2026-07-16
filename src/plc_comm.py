@@ -139,7 +139,6 @@ class PLCClient:
         found_dbs = []
         logger.info(f"Scanning S7 DB range {start} to {end} sequentially...")
         
-        import snap7
         c = snap7.client.Client()
         try:
             c.connect(self.ip, self.rack, self.slot)
