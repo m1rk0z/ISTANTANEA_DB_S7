@@ -807,7 +807,9 @@ class MainWindow(QMainWindow):
         self.execute_backup(dbs_to_backup)
 
     def backup_all_dbs(self):
-        self.execute_backup(self.dbs_list)    def execute_backup(self, dbs_list):
+        self.execute_backup(self.dbs_list)
+
+    def execute_backup(self, dbs_list):
         if not self.plc_client.is_connected():
             QMessageBox.warning(self, "Non connesso", "Devi connetterti al PLC per effettuare il backup.")
             return
