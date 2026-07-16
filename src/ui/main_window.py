@@ -682,6 +682,31 @@ class MainWindow(QMainWindow):
                 self.on_disconnected()
 
     def populate_blocks_table(self):
+        # 1. Save checked DB numbers to preserve checkbox states
+        checked_dbs = set()
+        had_items = self.blocks_table.rowCount() > 0
+        for row in range(self.blocks_table.rowCount()):
+            chk_widget = self.blocks_table.cellWidget(row, 0)
+            if chk_widget:
+                checkbox = chk_widget.layout().itemAt(0).widget()
+                if checkbox and checkbox.isChecked():
+                    db_item = self.blocks_table.item(row, 1)
+                    if db_item:
+                        checked_dbs.add(int(db_item.text()))
+                        
+        # Save current selected row's DB number
+        selected_db = None
+        selected_row_items = self.blocks_table.selectedItems()
+        if selected_row_items:
+            row = selected_row_items[0].row()
+            db_num_item = self.blocks_table.item(row, 1)
+            if db_num_item:
+                selected_db = int(db_num_item.text())
+                
+        scroll_pos = self.blocks_table.verticalScrollBar().value()
+        
+        # 2. Re-populate table
+        self.blocks_table.blockSignals(True)
         self.blocks_table.setRowCount(len(self.dbs_list))
         
         for i, db in enumerate(self.dbs_list):
@@ -691,7 +716,8 @@ class MainWindow(QMainWindow):
             chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             chk_layout.setContentsMargins(0, 0, 0, 0)
             checkbox = QCheckBox()
-            checkbox.setChecked(True)
+            # Default to Checked if first load, otherwise preserve checked state
+            checkbox.setChecked(not had_items or db in checked_dbs)
             chk_layout.addWidget(checkbox)
             self.blocks_table.setCellWidget(i, 0, chk_widget)
             
@@ -711,6 +737,19 @@ class MainWindow(QMainWindow):
             # Description (editable)
             desc_item = QTableWidgetItem(f"Blocco Dati DB{db}")
             self.blocks_table.setItem(i, 3, desc_item)
+            
+        # 3. Restore selection
+        if selected_db is not None:
+            for row in range(self.blocks_table.rowCount()):
+                db_item = self.blocks_table.item(row, 1)
+                if db_item and int(db_item.text()) == selected_db:
+                    self.blocks_table.selectRow(row)
+                    break
+                    
+        self.blocks_table.blockSignals(False)
+        
+        # 4. Restore scrollbar position
+        self.blocks_table.verticalScrollBar().setValue(scroll_pos)
 
     def set_table_selection(self, select):
         for row in range(self.blocks_table.rowCount()):
