@@ -7,7 +7,7 @@ import csv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-from utils import parse_s7_data
+from utils import parse_s7_data, pack_s7_data
 from ui.icons import get_custom_icon
 
 class CompareWindow(QDialog):
@@ -113,29 +113,70 @@ class CompareWindow(QDialog):
 
     def load_snapshot(self, target):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, f"Carica Snapshot {target}", "", "S7 Snapshot Files (*.s7d *.json);;All Files (*)"
+            self, f"Carica Snapshot {target}", "", "Snapshot Files (*.xlsx *.s7d *.json);;All Files (*)"
         )
         if not filepath:
             return
             
         try:
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-                
-            # Verify file format
-            if "dbs" not in data:
-                raise ValueError("File non valido. Manca la chiave 'dbs' dello snapshot.")
-                
             snap_data = {}
-            for db_str, content in data["dbs"].items():
-                db_num = int(db_str)
-                # Decode hex string back to bytearray
-                hex_data = content.get("data", "")
-                byte_data = bytearray.fromhex(hex_data)
-                snap_data[db_num] = {
-                    "size": content.get("size", len(byte_data)),
-                    "data": byte_data
-                }
+            if filepath.endswith('.xlsx'):
+                wb = openpyxl.load_workbook(filepath, data_only=True)
+                for sheet_name in wb.sheetnames:
+                    # Look for sheets that start with DB
+                    if sheet_name.replace(" ", "").upper().startswith("DB"):
+                        ws = wb[sheet_name]
+                        db_val = ws.cell(row=2, column=1).value
+                        if db_val is None:
+                            continue
+                        db_num = int(db_val)
+                        size = int(ws.cell(row=2, column=2).value or 0)
+                        
+                        byte_data = bytearray(size)
+                        
+                        # Read variable rows starting from row 5
+                        row_idx = 5
+                        while True:
+                            name_val = ws.cell(row=row_idx, column=1).value
+                            if name_val is None:
+                                break
+                            dtype = str(ws.cell(row=row_idx, column=2).value or "").strip()
+                            offset_val = ws.cell(row=row_idx, column=3).value
+                            value = ws.cell(row=row_idx, column=4).value
+                            
+                            if offset_val is not None:
+                                offset_str = str(offset_val).strip()
+                                if "." in offset_str:
+                                    parts = offset_str.split('.')
+                                    byte_off = int(parts[0])
+                                    bit_off = int(parts[1])
+                                else:
+                                    byte_off = int(float(offset_str)) if offset_str else 0
+                                    bit_off = 0
+                                    
+                                pack_s7_data(dtype, value, byte_off, bit_off, byte_data)
+                                
+                            row_idx += 1
+                            
+                        snap_data[db_num] = {
+                            "size": size,
+                            "data": byte_data
+                        }
+            else:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                    
+                if "dbs" not in data:
+                    raise ValueError("File non valido. Manca la chiave 'dbs' dello snapshot.")
+                    
+                for db_str, content in data["dbs"].items():
+                    db_num = int(db_str)
+                    hex_data = content.get("data", "")
+                    byte_data = bytearray.fromhex(hex_data)
+                    snap_data[db_num] = {
+                        "size": content.get("size", len(byte_data)),
+                        "data": byte_data
+                    }
                 
             file_name = filepath.split('/')[-1].split('\\')[-1]
             
