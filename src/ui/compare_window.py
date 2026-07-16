@@ -40,7 +40,7 @@ class CompareWindow(QDialog):
         
         # Left Side (Source A)
         self.source_a_label = QLabel("<b>Origine A:</b> [Nessuno - Clicca per caricare]")
-        self.source_a_label.setStyleSheet("border: 1px solid #c0c0c0; padding: 5px; background: white;")
+        self.source_a_label.setStyleSheet("border: 1px solid rgb(63, 63, 70); padding: 5px; border-radius: 4px;")
         files_layout.addWidget(self.source_a_label, 1)
         
         self.load_a_btn = QPushButton("Carica File A...")
@@ -61,19 +61,26 @@ class CompareWindow(QDialog):
         
         # Right Side (Source B)
         self.source_b_label = QLabel("<b>Origine B:</b> [Nessuno - Clicca per caricare]")
-        self.source_b_label.setStyleSheet("border: 1px solid #c0c0c0; padding: 5px; background: white;")
+        self.source_b_label.setStyleSheet("border: 1px solid rgb(63, 63, 70); padding: 5px; border-radius: 4px;")
         files_b_layout.addWidget(self.source_b_label, 1)
         
         self.load_b_btn = QPushButton("Carica File B...")
         self.load_b_btn.clicked.connect(lambda: self.load_snapshot("B"))
         files_b_layout.addWidget(self.load_b_btn)
         
+        self.live_b_btn = QPushButton("Usa PLC Live")
+        self.live_b_btn.setIcon(get_custom_icon("monitor"))
+        self.live_b_btn.clicked.connect(self.load_live_plc_b)
+        if not self.plc_client or not self.plc_client.is_connected():
+            self.live_b_btn.setEnabled(False)
+        files_b_layout.addWidget(self.live_b_btn)
+        
         layout.addLayout(files_b_layout)
         
         # Compare Button
         self.compare_btn = QPushButton("Compara e Genera Report")
         self.compare_btn.setIcon(get_custom_icon("compare"))
-        self.compare_btn.setStyleSheet("font-weight: bold; background-color: #009999; color: white;")
+        self.compare_btn.setStyleSheet("font-weight: bold;")
         self.compare_btn.clicked.connect(self.run_comparison)
         self.compare_btn.setEnabled(False)
         layout.addWidget(self.compare_btn)
@@ -174,6 +181,36 @@ class CompareWindow(QDialog):
             
         except Exception as e:
             self.source_a_label.setText("<b>Origine A:</b> [Errore PLC live]")
+            QMessageBox.critical(self, "Errore Lettura PLC", f"Impossibile leggere i valori live del PLC:\n{str(e)}")
+
+    def load_live_plc_b(self):
+        if not self.plc_client or not self.plc_client.is_connected():
+            QMessageBox.warning(self, "Non Connesso", "Non sei connesso ad alcun PLC live.")
+            return
+            
+        try:
+            self.source_b_label.setText("<b>Origine B:</b> [Lettura PLC live...]")
+            self.source_b_label.repaint()
+            
+            # Fetch all DBs and their current values
+            db_list = self.plc_client.list_dbs()
+            snap_data = {}
+            
+            for db_num in db_list:
+                size = self.plc_client.get_db_size(db_num)
+                data = self.plc_client.read_db_bytes(db_num, size)
+                snap_data[db_num] = {
+                    "size": size,
+                    "data": data
+                }
+                
+            self.snap_b_data = snap_data
+            self.snap_b_name = f"PLC Live ({self.plc_client.ip})"
+            self.source_b_label.setText(f"<b>Origine B:</b> {self.snap_b_name}")
+            self.check_compare_ready()
+            
+        except Exception as e:
+            self.source_b_label.setText("<b>Origine B:</b> [Errore PLC live]")
             QMessageBox.critical(self, "Errore Lettura PLC", f"Impossibile leggere i valori live del PLC:\n{str(e)}")
 
     def check_compare_ready(self):

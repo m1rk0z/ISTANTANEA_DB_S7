@@ -320,6 +320,12 @@ class MainWindow(QMainWindow):
         compare_act.triggered.connect(self.open_comparison_window)
         plc_menu.addAction(compare_act)
         
+        plc_menu.addSeparator()
+        
+        import_symbols_act = QAction("Importa Tabella Simbolico (SEQ/SDF/CSV)...", self)
+        import_symbols_act.triggered.connect(self.import_symbols_file)
+        plc_menu.addAction(import_symbols_act)
+        
         # Help Menu
         help_menu = menubar.addMenu("?")
         about_act = QAction("Informazioni su...", self)
@@ -418,6 +424,11 @@ class MainWindow(QMainWindow):
         self.scan_range_btn = QPushButton("Scansiona Intervallo DB...")
         self.scan_range_btn.clicked.connect(self.toggle_db_range_scan)
         action_layout.addWidget(self.scan_range_btn)
+        
+        # Import Symbols Button
+        self.import_symbols_btn = QPushButton("Importa Simbolico...")
+        self.import_symbols_btn.clicked.connect(self.import_symbols_file)
+        action_layout.addWidget(self.import_symbols_btn)
         
         layout.addLayout(action_layout)
         
@@ -739,7 +750,14 @@ class MainWindow(QMainWindow):
             self.blocks_table.setItem(i, 2, size_item)
             
             # Description (editable)
-            desc_item = QTableWidgetItem(f"Blocco Dati DB{db}")
+            desc_val = f"Blocco Dati DB{db}"
+            if hasattr(self, 'symbols_map') and db in self.symbols_map:
+                sym_info = self.symbols_map[db]
+                name = sym_info.get("name", "")
+                comment = sym_info.get("comment", "")
+                desc_val = f"{name} - {comment}" if comment else name
+                
+            desc_item = QTableWidgetItem(desc_val)
             self.blocks_table.setItem(i, 3, desc_item)
             
         # 3. Defer selection and scrollbar position restoration until layout updates are finished
@@ -789,15 +807,14 @@ class MainWindow(QMainWindow):
         self.execute_backup(dbs_to_backup)
 
     def backup_all_dbs(self):
-        self.execute_backup(self.dbs_list)
-
-    def execute_backup(self, dbs_list):
+        self.execute_backup(self.dbs_list)    def execute_backup(self, dbs_list):
         if not self.plc_client.is_connected():
             QMessageBox.warning(self, "Non connesso", "Devi connetterti al PLC per effettuare il backup.")
             return
             
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "Salva Snapshot S7", f"Snapshot_S7_{datetime.date.today().strftime('%Y%m%d')}.s7d", "S7 Snapshot Files (*.s7d *.json)"
+        filepath, selected_filter = QFileDialog.getSaveFileName(
+            self, "Salva Snapshot S7", f"Snapshot_S7_{datetime.date.today().strftime('%Y%m%d')}.xlsx", 
+            "Excel Snapshot Files (*.xlsx);;S7 Snapshot Files (*.s7d *.json)"
         )
         if not filepath:
             return
@@ -805,31 +822,85 @@ class MainWindow(QMainWindow):
         self.update_status_bar("Esecuzione backup snapshot...")
         
         try:
-            backup_data = {
-                "plc_ip": self.plc_client.ip,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "is_simulated": self.plc_client.simulate,
-                "dbs": {}
-            }
-            
-            for db in dbs_list:
-                size = self.dbs_sizes.get(db, 0)
-                if size == 0:
-                    continue
-                    
-                data = self.plc_client.read_db_bytes(db, size)
+            # Gather descriptions
+            descriptions = {}
+            for r in range(self.blocks_table.rowCount()):
+                db_num_item = self.blocks_table.item(r, 1)
+                if db_num_item:
+                    db_num = int(db_num_item.text())
+                    desc_item = self.blocks_table.item(r, 3)
+                    descriptions[db_num] = desc_item.text() if desc_item else ""
+
+            if filepath.endswith('.xlsx'):
+                # Save to Excel Snapshot format
+                import openpyxl
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "S7 Snapshot"
                 
-                # Convert bytearray to hex string for portable storage
-                backup_data["dbs"][str(db)] = {
-                    "size": size,
-                    "data": data.hex().upper()
+                # Write metadata
+                ws["A1"] = "PLC IP"
+                ws["B1"] = self.plc_client.ip
+                ws["A2"] = "Timestamp"
+                ws["B2"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws["A3"] = "Simulation"
+                ws["B3"] = str(self.plc_client.simulate)
+                
+                # Write headers
+                ws["A5"] = "DB"
+                ws["B5"] = "Size"
+                ws["C5"] = "DataHex"
+                ws["D5"] = "Description"
+                
+                header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+                header_fill = openpyxl.styles.PatternFill(start_color="008080", end_color="008080", fill_type="solid")
+                for col in ["A", "B", "C", "D"]:
+                    ws[f"{col}5"].font = header_font
+                    ws[f"{col}5"].fill = header_fill
+                    
+                row_idx = 6
+                for db in dbs_list:
+                    size = self.dbs_sizes.get(db, 0)
+                    if size == 0:
+                        continue
+                        
+                    data = self.plc_client.read_db_bytes(db, size)
+                    desc = descriptions.get(db, f"Blocco Dati DB{db}")
+                    
+                    ws.cell(row=row_idx, column=1, value=db)
+                    ws.cell(row=row_idx, column=2, value=size)
+                    ws.cell(row=row_idx, column=3, value=data.hex().upper())
+                    ws.cell(row=row_idx, column=4, value=desc)
+                    row_idx += 1
+                    
+                wb.save(filepath)
+            else:
+                # Save to legacy JSON/S7D format
+                backup_data = {
+                    "plc_ip": self.plc_client.ip,
+                    "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "is_simulated": self.plc_client.simulate,
+                    "dbs": {}
                 }
                 
-            # Write to JSON file
-            with open(filepath, 'w') as f:
-                json.dump(backup_data, f, indent=4)
-                
-            self.update_status_bar(f"Backup completato con successo: {len(dbs_list)} DB scritti in file.")
+                for db in dbs_list:
+                    size = self.dbs_sizes.get(db, 0)
+                    if size == 0:
+                        continue
+                        
+                    data = self.plc_client.read_db_bytes(db, size)
+                    desc = descriptions.get(db, f"Blocco Dati DB{db}")
+                    
+                    backup_data["dbs"][str(db)] = {
+                        "size": size,
+                        "data": data.hex().upper(),
+                        "description": desc
+                    }
+                    
+                with open(filepath, 'w') as f:
+                    json.dump(backup_data, f, indent=4)
+                    
+            self.update_status_bar(f"Backup completato con successo: {len(dbs_list)} DB scritti.")
             QMessageBox.information(
                 self, "Backup Completato",
                 f"Backup di {len(dbs_list)} Data Blocks salvato correttamente in:\n{filepath}"
@@ -840,15 +911,47 @@ class MainWindow(QMainWindow):
 
     def restore_from_file(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Apri Snapshot S7", "", "S7 Snapshot Files (*.s7d *.json);;All Files (*)"
+            self, "Apri Snapshot S7", "", "Snapshot Files (*.xlsx *.s7d *.json);;All Files (*)"
         )
         if not filepath:
             return
             
         try:
-            with open(filepath, 'r') as f:
-                backup_data = json.load(f)
+            backup_data = {}
+            if filepath.endswith('.xlsx'):
+                # Load from Excel
+                import openpyxl
+                wb = openpyxl.load_workbook(filepath, data_only=True)
+                ws = wb.active
                 
+                backup_data = {
+                    "plc_ip": ws["B1"].value,
+                    "timestamp": ws["B2"].value,
+                    "is_simulated": str(ws["B3"].value).lower() == "true",
+                    "dbs": {}
+                }
+                
+                row_idx = 6
+                while True:
+                    db_val = ws.cell(row=row_idx, column=1).value
+                    if db_val is None:
+                        break
+                    db_num = int(db_val)
+                    size = int(ws.cell(row=row_idx, column=2).value or 0)
+                    data_hex = str(ws.cell(row=row_idx, column=3).value or "").strip()
+                    desc = str(ws.cell(row=row_idx, column=4).value or "")
+                    
+                    backup_data["dbs"][str(db_num)] = {
+                        "size": size,
+                        "data": data_hex,
+                        "description": desc
+                    }
+                    row_idx += 1
+            else:
+                # Load from legacy JSON/S7D
+                with open(filepath, 'r') as f:
+                    backup_data = json.load(f)
+                    
             if "dbs" not in backup_data:
                 raise ValueError("Il file snapshot non è nel formato corretto.")
                 
@@ -919,14 +1022,29 @@ class MainWindow(QMainWindow):
             self.update_status_bar("Scrittura ripristino nel PLC in corso...")
             success_count = 0
             
+            # Apply descriptions from the snapshot file back into our symbols_map
+            if not hasattr(self, 'symbols_map'):
+                self.symbols_map = {}
+                
             for db in selected_dbs_restore:
                 db_str = str(db)
-                hex_data = backup_data["dbs"][db_str]["data"]
+                db_info = backup_data["dbs"][db_str]
+                hex_data = db_info["data"]
                 byte_data = bytearray.fromhex(hex_data)
                 
                 self.plc_client.write_db_bytes(db, byte_data)
                 success_count += 1
                 
+                # Restore description if present in file
+                if "description" in db_info and db_info["description"]:
+                    self.symbols_map[db] = {
+                        "name": db_info["description"],
+                        "comment": ""
+                    }
+                    
+            # Update blocks table to reflect loaded descriptions
+            self.populate_blocks_table()
+            
             self.update_status_bar(f"Ripristino completato: {success_count} DB riscritti nel PLC.")
             QMessageBox.information(
                 self, "Ripristino Completato",
@@ -940,6 +1058,68 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.update_status_bar("Ripristino fallito.")
             QMessageBox.critical(self, "Errore Ripristino", f"Impossibile completare il ripristino:\n{str(e)}")
+
+    def import_symbols_file(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Importa Simbolico PLC (STEP 7)", "", "Symbol files (*.seq *.sdf *.csv *.txt);;All Files (*)"
+        )
+        if not filepath:
+            return
+            
+        try:
+            symbols_map = {} # {db_num: {"name": symbol_name, "comment": comment}}
+            
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    # Skip comments or empty lines
+                    line = line.strip()
+                    if not line or line.startswith('//'):
+                        continue
+                        
+                    # Split by tab, semicolon or comma
+                    parts = []
+                    if '\t' in line:
+                        parts = line.split('\t')
+                    elif ';' in line:
+                        parts = line.split(';')
+                    else:
+                        parts = line.split(',')
+                        
+                    parts = [p.strip().strip('"') for p in parts]
+                    if len(parts) < 2:
+                        continue
+                        
+                    symbol_name = parts[0]
+                    address = parts[1]
+                    comment = parts[3] if len(parts) > 3 else ""
+                    
+                    # Check if address refers to a DB (e.g. DB10 or DB 10)
+                    addr_clean = address.replace(" ", "").upper()
+                    if addr_clean.startswith("DB") and addr_clean[2:].isdigit():
+                        db_num = int(addr_clean[2:])
+                        symbols_map[db_num] = {
+                            "name": symbol_name,
+                            "comment": comment
+                        }
+            
+            if not symbols_map:
+                QMessageBox.warning(self, "Nessun Simbolo Trovato", "Non è stato trovato alcun simbolo DB compatibile nel file selezionato.")
+                return
+                
+            # Apply symbols to blocks list descriptions
+            if not hasattr(self, 'symbols_map'):
+                self.symbols_map = {}
+            self.symbols_map.update(symbols_map)
+            
+            # Re-populate blocks table to show the new descriptions!
+            self.populate_blocks_table()
+            
+            QMessageBox.information(
+                self, "Importazione Completata",
+                f"Importazione completata con successo! Trovati e applicati {len(symbols_map)} simboli DB."
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Errore Importazione", f"Errore durante l'importazione del simbolico:\n{str(e)}")
 
     def open_accessible_nodes(self):
         self.nodes_dialog = NodesDialog(self, simulate=self.plc_client.simulate)

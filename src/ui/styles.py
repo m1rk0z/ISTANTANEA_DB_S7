@@ -102,17 +102,6 @@ def get_modern_stylesheet(is_dark=None):
         background-color: transparent;
         color: {colors["TEXT"]};
     }}
-    QCheckBox::indicator {{
-        border: 1px solid {colors["BORDER"]};
-        background: {colors["BG_INPUT"]};
-        width: 14px;
-        height: 14px;
-        border-radius: 3px;
-    }}
-    QCheckBox::indicator:checked {{
-        background-color: {colors["ACCENT"]};
-        border-color: {colors["ACCENT"]};
-    }}
 
     /* Menu Bar */
     QMenuBar {{
