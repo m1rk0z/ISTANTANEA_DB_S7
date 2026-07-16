@@ -242,29 +242,42 @@ class NodesDialog(QDialog):
         self.ok_btn.setEnabled(has_selection)
 
     def accept_selected_node(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        if not selected_rows:
-            return
+        try:
+            selected_rows = self.table.selectionModel().selectedRows()
+            if not selected_rows:
+                return
+                
+            row = selected_rows[0].row()
             
-        row = selected_rows[0].row()
-        self.selected_ip = self.table.item(row, 0).text()
-        
-        # Guess rack and slot based on CPU type
-        cpu_model = self.table.item(row, 1).text()
-        if "CPU 4" in cpu_model:
-            # S7-400 CPU is often in slot 3 (sometimes rack 0, slot 3)
-            self.selected_rack = 0
-            self.selected_slot = 3
-        elif "CPU 3" in cpu_model:
-            # S7-300 CPU is always in slot 2
+            ip_item = self.table.item(row, 0)
+            if not ip_item:
+                return
+            self.selected_ip = ip_item.text()
+            
+            # Defaults
             self.selected_rack = 0
             self.selected_slot = 2
-        else:
-            # S7-1200/1500 is in slot 1
-            self.selected_rack = 0
-            self.selected_slot = 1
             
-        self.accept()
+            cpu_item = self.table.item(row, 1)
+            if cpu_item:
+                cpu_model = cpu_item.text()
+                if "CPU 4" in cpu_model:
+                    # S7-400 CPU is often in slot 3
+                    self.selected_rack = 0
+                    self.selected_slot = 3
+                elif "CPU 3" in cpu_model:
+                    # S7-300 CPU is always in slot 2
+                    self.selected_rack = 0
+                    self.selected_slot = 2
+                else:
+                    # S7-1200/1500 is in slot 1
+                    self.selected_rack = 0
+                    self.selected_slot = 1
+                    
+            self.accept()
+        except Exception as e:
+            # Prevent crashes if table has invalid items
+            pass
 
     def done(self, r):
         # Safe cleanup: disconnect signals if thread is still running

@@ -31,8 +31,14 @@ class MainWindow(QMainWindow):
         self.dbs_sizes = {}     # {db_num: size}
         self.dbs_structures = {} # {db_num: [variables]}
         
+        self.config_path = "config.json"
+        self.profiles = []
+        
         # Set up GUI layouts
         self.init_ui()
+        
+        # Load last connection and directory profiles
+        self.load_config()
         
         # Heartbeat timer for connection status check
         self.hb_timer = QTimer(self)
@@ -166,6 +172,23 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
+        # Address Book (Rubrica)
+        toolbar.addWidget(QLabel("Rubrica: "))
+        self.rubrica_combo = QComboBox()
+        self.rubrica_combo.setMinimumWidth(150)
+        self.rubrica_combo.currentIndexChanged.connect(self.on_profile_selected)
+        toolbar.addWidget(self.rubrica_combo)
+        
+        self.save_profile_btn = QPushButton("Salva")
+        self.save_profile_btn.clicked.connect(self.save_current_profile)
+        toolbar.addWidget(self.save_profile_btn)
+        
+        self.manage_profile_btn = QPushButton("Gestisci")
+        self.manage_profile_btn.clicked.connect(self.manage_profiles)
+        toolbar.addWidget(self.manage_profile_btn)
+        
+        toolbar.addSeparator()
+        
         # Action Shortcuts
         nodes_btn = QPushButton("Nodi Accessibili")
         nodes_btn.setIcon(get_custom_icon("scan"))
@@ -191,6 +214,11 @@ class MainWindow(QMainWindow):
         select_none_btn = QPushButton("Deseleziona Tutti")
         select_none_btn.clicked.connect(lambda: self.set_table_selection(False))
         action_layout.addWidget(select_none_btn)
+        
+        # Manual Add Button
+        self.add_manual_db_btn = QPushButton("Aggiungi DB Manuale...")
+        self.add_manual_db_btn.clicked.connect(self.add_db_manually)
+        action_layout.addWidget(self.add_manual_db_btn)
         
         layout.addLayout(action_layout)
         
@@ -658,3 +686,201 @@ class MainWindow(QMainWindow):
             "<p>Stile grafico ispirato a <i>Siemens Simatic Manager Step 7</i>.</p>"
             "<p>Sviluppato in Python con PyQt6 e python-snap7 pure-python library.</p>"
         )
+
+    def closeEvent(self, event):
+        # Save last connection configuration on window close
+        self.save_config()
+        super().closeEvent(event)
+
+    def load_config(self):
+        import os
+        self.profiles = []
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r') as f:
+                    config = json.load(f)
+                    
+                # Last connection details
+                last_conn = config.get("last_connection", {})
+                if last_conn:
+                    self.ip_input.setText(last_conn.get("ip", "192.168.1.10"))
+                    self.rack_input.setValue(last_conn.get("rack", 0))
+                    self.slot_input.setValue(last_conn.get("slot", 2))
+                    self.sim_check.setChecked(last_conn.get("simulate", False))
+                    
+                # Directory profiles
+                self.profiles = config.get("profiles", [])
+                self.update_rubrica_combo()
+            except Exception as e:
+                print(f"Error loading config: {e}")
+        else:
+            # Default profiles
+            self.profiles = [
+                {"name": "Simulatore Locale", "ip": "127.0.0.1", "rack": 0, "slot": 2, "simulate": True},
+                {"name": "CPU Test (200.100.0.11)", "ip": "200.100.0.11", "rack": 0, "slot": 3, "simulate": False}
+            ]
+            self.update_rubrica_combo()
+            self.save_config()
+
+    def save_config(self):
+        try:
+            config = {
+                "last_connection": {
+                    "ip": self.ip_input.text().strip(),
+                    "rack": self.rack_input.value(),
+                    "slot": self.slot_input.value(),
+                    "simulate": self.sim_check.isChecked()
+                },
+                "profiles": self.profiles
+            }
+            with open(self.config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            print(f"Error saving config: {e}")
+
+    def update_rubrica_combo(self):
+        self.rubrica_combo.blockSignals(True)
+        self.rubrica_combo.clear()
+        self.rubrica_combo.addItem("Seleziona Profilo...")
+        for profile in self.profiles:
+            self.rubrica_combo.addItem(profile["name"])
+        self.rubrica_combo.blockSignals(False)
+
+    def on_profile_selected(self, index):
+        if index <= 0 or index > len(self.profiles):
+            return
+        profile = self.profiles[index - 1]
+        
+        # Load profile connection configurations
+        if self.plc_client.is_connected():
+            self.toggle_connection()
+            
+        self.ip_input.setText(profile["ip"])
+        self.rack_input.setValue(profile["rack"])
+        self.slot_input.setValue(profile["slot"])
+        self.sim_check.setChecked(profile["simulate"])
+        
+        # Reset selection index
+        self.rubrica_combo.blockSignals(True)
+        self.rubrica_combo.setCurrentIndex(0)
+        self.rubrica_combo.blockSignals(False)
+
+    def save_current_profile(self):
+        from PyQt6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "Salva Profilo", "Inserisci il nome per questo profilo PLC:")
+        if not ok or not name.strip():
+            return
+            
+        name = name.strip()
+        existing = next((p for p in self.profiles if p["name"].lower() == name.lower()), None)
+        profile = {
+            "name": name,
+            "ip": self.ip_input.text().strip(),
+            "rack": self.rack_input.value(),
+            "slot": self.slot_input.value(),
+            "simulate": self.sim_check.isChecked()
+        }
+        
+        if existing:
+            reply = QMessageBox.question(
+                self, "Sovrascrivi Profilo",
+                f"Il profilo '{name}' esiste già. Vuoi sovrascriverlo?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+            self.profiles.remove(existing)
+            
+        self.profiles.append(profile)
+        self.update_rubrica_combo()
+        self.save_config()
+        QMessageBox.information(self, "Profilo Salvato", f"Profilo '{name}' salvato correttamente in rubrica.")
+
+    def manage_profiles(self):
+        from PyQt6.QtWidgets import QDialog, QListWidget
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Gestione Rubrica PLC")
+        dialog.setMinimumSize(300, 250)
+        
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("<b>Profili PLC salvati:</b>"))
+        
+        list_widget = QListWidget()
+        for p in self.profiles:
+            list_widget.addItem(p["name"])
+        layout.addWidget(list_widget)
+        
+        btn_layout = QHBoxLayout()
+        delete_btn = QPushButton("Elimina Selezionato")
+        delete_btn.setStyleSheet("color: red;")
+        btn_layout.addWidget(delete_btn)
+        
+        close_btn = QPushButton("Chiudi")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        def delete_selected():
+            selected_items = list_widget.selectedItems()
+            if not selected_items:
+                return
+            name = selected_items[0].text()
+            reply = QMessageBox.question(
+                self, "Elimina Profilo",
+                f"Sei sicuro di voler eliminare il profilo '{name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                p_to_remove = next((p for p in self.profiles if p["name"] == name), None)
+                if p_to_remove:
+                    self.profiles.remove(p_to_remove)
+                    self.update_rubrica_combo()
+                    self.save_config()
+                    list_widget.takeItem(list_widget.row(selected_items[0]))
+                    
+        delete_btn.clicked.connect(delete_selected)
+        dialog.exec()
+
+    def add_db_manually(self):
+        from PyQt6.QtWidgets import QInputDialog
+        db_num, ok = QInputDialog.getInt(self, "Aggiungi DB Manualmente", "Inserisci il numero del Data Block (DB):", 1, 1, 65535, 1)
+        if not ok:
+            return
+            
+        if db_num in self.dbs_list:
+            QMessageBox.warning(self, "DB esistente", f"Il DB {db_num} è già presente nell'elenco.")
+            return
+            
+        # Determine size
+        size = 0
+        if self.plc_client.is_connected():
+            self.update_status_bar(f"Rilevamento dimensione per DB {db_num}...")
+            try:
+                size = self.plc_client.get_db_size(db_num)
+            except Exception as e:
+                # Fallback if size detection fails
+                QMessageBox.information(
+                    self, "Rilevamento Fallito",
+                    f"Impossibile rilevare la dimensione del DB {db_num} dal PLC.\n"
+                    "Inserisci la dimensione manualmente."
+                )
+                
+        if size <= 0:
+            # Ask user for size manually
+            size, ok = QInputDialog.getInt(
+                self, "Dimensione DB",
+                f"Inserisci la dimensione del DB {db_num} in byte:",
+                100, 1, 65535, 1
+            )
+            if not ok:
+                return
+                
+        # Add to list
+        self.dbs_list.append(db_num)
+        self.dbs_list.sort()
+        self.dbs_sizes[db_num] = size
+        
+        # Update UI
+        self.populate_blocks_table()
+        self.update_project_tree_online()
+        self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")

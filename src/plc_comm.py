@@ -147,6 +147,37 @@ class PLCClient:
                 logger.error(f"Failed to list DB blocks: {ex}")
                 raise PLCCommError(f"Failed to list DBs: {str(ex)}")
 
+    def probe_db_size(self, db_number):
+        """
+        Fallback method: Probes the DB size by doing a binary search using db_read.
+        This is necessary for S7-1200/1500 or security-restricted PLCs where get_block_info fails.
+        """
+        if not self.is_connected():
+            raise PLCCommError("Not connected to PLC.")
+            
+        logger.info(f"Probing DB {db_number} size using binary search...")
+        low = 1
+        high = 65535
+        detected_size = 0
+        
+        # Test if DB exists at all by reading 1 byte
+        try:
+            self.client.db_read(db_number, 0, 1)
+        except Exception:
+            return 0
+            
+        while low <= high:
+            mid = (low + high) // 2
+            try:
+                self.client.db_read(db_number, 0, mid)
+                detected_size = mid
+                low = mid + 1  # Try a larger size
+            except Exception:
+                high = mid - 1  # Try a smaller size
+                
+        logger.info(f"Probed DB {db_number} size: {detected_size} bytes")
+        return detected_size
+
     def get_db_size(self, db_number):
         if not self.is_connected():
             raise PLCCommError("Not connected to PLC.")
@@ -175,11 +206,16 @@ class PLCClient:
             elif hasattr(info, 'load_size'):
                 return info.load_size
             else:
-                # If we cannot find it, let's try a direct read probe
-                # S7-300 DBs can be up to 65535 bytes, but usually smaller.
-                # If size is unknown, we can return None or raise.
                 raise PLCCommError("Could not retrieve block size from metadata.")
         except Exception as e:
+            logger.info(f"get_block_info failed for DB {db_number}: {e}. Falling back to binary search probe...")
+            try:
+                probed_size = self.probe_db_size(db_number)
+                if probed_size > 0:
+                    return probed_size
+            except Exception as ex:
+                logger.error(f"Failed to probe DB {db_number} size: {ex}")
+                
             logger.error(f"Failed to get DB {db_number} size: {e}")
             raise PLCCommError(f"Failed to get DB {db_number} size: {str(e)}")
 

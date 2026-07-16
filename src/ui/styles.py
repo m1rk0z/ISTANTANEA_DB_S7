@@ -187,7 +187,7 @@ QPushButton:disabled {{
 }}
 
 /* Inputs (LineEdits, SpinBoxes, ComboBoxes) */
-QLineEdit, QSpinBox, QComboBox {{
+QLineEdit, QComboBox {{
     background-color: white;
     border: 1px solid {WIN_BORDER};
     border-radius: 2px;
@@ -197,13 +197,85 @@ QLineEdit, QSpinBox, QComboBox {{
     font-family: "Segoe UI", "Tahoma", sans-serif;
 }}
 
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
+QLineEdit:focus, QComboBox:focus {{
     border: 1px solid {SIEMENS_TEAL};
 }}
 
-QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {{
+QLineEdit:disabled, QComboBox:disabled {{
     background-color: #e8e8e8;
     color: #707070;
+}}
+
+/* Custom QSpinBox Styling to fix the Up/Down arrows rendering bug in Qt */
+QSpinBox {{
+    background-color: white;
+    border: 1px solid {WIN_BORDER};
+    border-radius: 2px;
+    padding: 4px;
+    padding-right: 20px; /* Make space for custom buttons */
+    color: {TEXT_DARK};
+    font-size: 10pt;
+    font-family: "Segoe UI", "Tahoma", sans-serif;
+}}
+
+QSpinBox:focus {{
+    border: 1px solid {SIEMENS_TEAL};
+}}
+
+QSpinBox:disabled {{
+    background-color: #e8e8e8;
+    color: #707070;
+}}
+
+QSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid {WIN_BORDER};
+    border-bottom: 1px solid {WIN_BORDER};
+    background: {WIN_GRAY};
+    border-top-right-radius: 2px;
+}}
+
+QSpinBox::up-button:hover {{
+    background: #e2f4f4;
+}}
+
+QSpinBox::up-button:pressed {{
+    background: #cdeaea;
+}}
+
+QSpinBox::up-arrow {{
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 6px solid {TEXT_DARK};
+}}
+
+QSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid {WIN_BORDER};
+    background: {WIN_GRAY};
+    border-bottom-right-radius: 2px;
+}}
+
+QSpinBox::down-button:hover {{
+    background: #e2f4f4;
+}}
+
+QSpinBox::down-button:pressed {{
+    background: #cdeaea;
+}}
+
+QSpinBox::down-arrow {{
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid {TEXT_DARK};
 }}
 
 /* Group Boxes */

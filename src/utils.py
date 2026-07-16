@@ -11,39 +11,92 @@ def get_local_ip_adapters():
     Retrieves all active local network adapters and their IPv4 addresses.
     Returns a list of dicts: [{'name': 'Adapter Name', 'ip': '192.168.1.10', 'subnet': '192.168.1.0/24'}]
     """
+    import subprocess
     adapters = []
     
-    # Method 1: Using standard socket host info (very portable on Windows)
+    # Run ipconfig to fetch active interfaces and subnets
     try:
-        hostname = socket.gethostname()
-        # Resolve all IPs linked to this hostname
-        ips = socket.gethostbyname_ex(hostname)[2]
+        res = subprocess.run(["ipconfig"], capture_output=True, text=True, errors='ignore')
+        lines = res.stdout.split('\n')
         
-        # Filter out localhost and IPv6-like structures
-        for ip in ips:
-            if ip.startswith("127."):
+        current_adapter = None
+        current_ip = None
+        current_mask = None
+        
+        for line in lines:
+            line_str = line.strip()
+            if not line_str:
                 continue
+                
+            # Adapter title lines on Windows typically don't have leading spaces and end with a colon
+            if not line.startswith(" ") and not line.startswith("\t") and line_str.endswith(":"):
+                # Save previous adapter if complete
+                if current_adapter and current_ip and current_mask:
+                    try:
+                        net = ipaddress.IPv4Network(f"{current_ip}/{current_mask}", strict=False)
+                        adapters.append({
+                            "name": current_adapter,
+                            "ip": current_ip,
+                            "subnet": str(net)
+                        })
+                    except Exception:
+                        pass
+                
+                current_adapter = line_str[:-1]
+                current_ip = None
+                current_mask = None
+                
+            elif "IPv4 Address" in line_str or "Indirizzo IPv4" in line_str:
+                parts = line_str.split(":")
+                if len(parts) >= 2:
+                    current_ip = parts[1].strip().replace("(Preferred)", "").replace("(Preferito)", "")
+            elif "Subnet Mask" in line_str or "Maschera di sottorete" in line_str or "Subnet mask" in line_str:
+                parts = line_str.split(":")
+                if len(parts) >= 2:
+                    current_mask = parts[1].strip()
+                    
+        # Save last adapter
+        if current_adapter and current_ip and current_mask:
             try:
-                # Construct standard /24 subnet as default
-                net = ipaddress.IPv4Network(f"{ip}/255.255.255.0", strict=False)
+                net = ipaddress.IPv4Network(f"{current_ip}/{current_mask}", strict=False)
                 adapters.append({
-                    "name": f"Local Interface ({ip})",
-                    "ip": ip,
+                    "name": current_adapter,
+                    "ip": current_ip,
                     "subnet": str(net)
                 })
             except Exception:
                 pass
+                
     except Exception as e:
-        logger.warning(f"Error querying socket host adapters: {e}")
+        logger.warning(f"Error querying ipconfig adapters: {e}")
         
-    # If no adapters found, add a fallback simulated range
+    # Fallback to hostname-based socket lookup if ipconfig yields nothing
     if not adapters:
-        adapters.append({
-            "name": "Simulated Loopback (Localhost)",
-            "ip": "127.0.0.1",
-            "subnet": "127.0.0.0/24"
-        })
-        
+        try:
+            hostname = socket.gethostname()
+            ips = socket.gethostbyname_ex(hostname)[2]
+            for ip in ips:
+                if ip.startswith("127."):
+                    continue
+                try:
+                    net = ipaddress.IPv4Network(f"{ip}/255.255.255.0", strict=False)
+                    adapters.append({
+                        "name": f"Local Interface ({ip})",
+                        "ip": ip,
+                        "subnet": str(net)
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Fallback socket lookup failed: {e}")
+            
+    # Add localhost Loopback adapter
+    adapters.append({
+        "name": "Loopback (Localhost)",
+        "ip": "127.0.0.1",
+        "subnet": "127.0.0.0/24"
+    })
+    
     return adapters
 
 def check_ip_port_102(ip, timeout=0.2):
