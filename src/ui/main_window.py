@@ -1080,33 +1080,56 @@ class MainWindow(QMainWindow):
                 with open(filepath, 'r', encoding='latin-1') as f:
                     lines = f.readlines()
                     
+            import re
             for line in lines:
                 # Skip comments or empty lines
                 line = line.strip()
                 if not line or line.startswith('//'):
                     continue
                     
-                # Split by tab, semicolon or comma
-                parts = []
-                if '\t' in line:
-                    parts = line.split('\t')
-                elif ';' in line:
-                    parts = line.split(';')
+                # Strip prefix number followed by comma (e.g., "126,")
+                if ',' in line:
+                    parts = line.split(',', 1)
+                    content = parts[1].strip()
                 else:
-                    parts = line.split(',')
+                    content = line
                     
-                parts = [p.strip().strip('"') for p in parts]
-                if len(parts) < 2:
+                # Check for comments at the end of the line (often in quotes)
+                comment = ""
+                if content.count('"') >= 2 and content.endswith('"'):
+                    last_quote = content.rfind('"')
+                    first_quote = content.rfind('"', 0, last_quote)
+                    if first_quote != -1:
+                        comment = content[first_quote+1:last_quote]
+                        content = content[:first_quote].strip()
+                        
+                # Split columns by tab or by 2 or more spaces
+                if '\t' in content:
+                    cols = [c.strip().strip('"') for c in content.split('\t') if c.strip()]
+                else:
+                    cols = [c.strip().strip('"') for c in re.split(r'\s{2,}', content) if c.strip()]
+                    
+                if len(cols) < 2:
                     continue
                     
-                symbol_name = parts[0]
-                address = parts[1]
-                comment = parts[3] if len(parts) > 3 else ""
+                symbol_name = cols[0]
+                address_type = ""
+                address_num_str = ""
                 
-                # Check if address refers to a DB (e.g. DB10 or DB 10)
-                addr_clean = address.replace(" ", "").upper()
-                if addr_clean.startswith("DB") and addr_clean[2:].isdigit():
-                    db_num = int(addr_clean[2:])
+                if len(cols) >= 3:
+                    if cols[1].upper() == "DB":
+                        address_type = "DB"
+                        address_num_str = cols[2]
+                        
+                # Handle combined address representation like "DB 3401"
+                if not address_type and len(cols) >= 2:
+                    addr_part = cols[1].replace(" ", "").upper()
+                    if addr_part.startswith("DB") and addr_part[2:].isdigit():
+                        address_type = "DB"
+                        address_num_str = addr_part[2:]
+                        
+                if address_type == "DB" and address_num_str.isdigit():
+                    db_num = int(address_num_str)
                     symbols_map[db_num] = {
                         "name": symbol_name,
                         "comment": comment
