@@ -240,6 +240,7 @@ class MainWindow(QMainWindow):
         
         # Main Central Widget
         central = QWidget()
+        central.setObjectName("centralWidget")
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(5, 5, 5, 5)

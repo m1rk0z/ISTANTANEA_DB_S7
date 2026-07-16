@@ -37,66 +37,81 @@ def get_modern_stylesheet(is_dark=None):
     if is_dark:
         # Modern Premium Dark Mode (Sleek Zinc / Teal Accent)
         colors = {
-            "BG_MAIN": "#18181b",
-            "BG_CARD": "#27272a",
-            "BG_TREE_TABLE": "#18181b",
-            "BG_HEADER": "#202023",
-            "BG_BUTTON": "#27272a",
-            "BG_DISABLED": "#202023",
-            "BG_INPUT": "#202023",
-            "TEXT": "#f4f4f5",
-            "TEXT_MUTED": "#a1a1aa",
-            "TEXT_DISABLED": "#52525b",
-            "BORDER": "#3f3f46",
-            "GRIDLINE": "#27272a",
-            "ACCENT": "#00cccc",
-            "HOVER": "#1e3d3d",
-            "SCROLL_HANDLE": "#3f3f46"
+            "BG_MAIN": "#0a0e17",
+            "BG_CARD": "#121a24",
+            "BG_TREE_TABLE": "#0e131d",
+            "BG_HEADER": "#1a2332",
+            "BG_BUTTON": "#121a24",
+            "BG_DISABLED": "#161f2d",
+            "BG_INPUT": "#0e131d",
+            "TEXT": "#f8fafc",
+            "TEXT_MUTED": "#94a3b8",
+            "TEXT_DISABLED": "#475569",
+            "BORDER": "#1e293b",
+            "GRIDLINE": "#1e293b",
+            "ACCENT": "#06b6d4",
+            "HOVER": "#083344",
+            "SCROLL_HANDLE": "#334155"
         }
     else:
         # Modern Premium Light Mode (Sleek Gray-50 / Petrol Teal Accent)
         colors = {
-            "BG_MAIN": "#f9fafb",
+            "BG_MAIN": "#f8fafc",
             "BG_CARD": "#ffffff",
             "BG_TREE_TABLE": "#ffffff",
-            "BG_HEADER": "#f3f4f6",
+            "BG_HEADER": "#f1f5f9",
             "BG_BUTTON": "#ffffff",
-            "BG_DISABLED": "#f3f4f6",
+            "BG_DISABLED": "#f1f5f9",
             "BG_INPUT": "#ffffff",
-            "TEXT": "#1f2937",
-            "TEXT_MUTED": "#6b7280",
-            "TEXT_DISABLED": "#9ca3af",
-            "BORDER": "#e5e7eb",
-            "GRIDLINE": "#f3f4f6",
-            "ACCENT": "#008080",
-            "HOVER": "#e0f2f1",
-            "SCROLL_HANDLE": "#d1d5db"
+            "TEXT": "#0f172a",
+            "TEXT_MUTED": "#64748b",
+            "TEXT_DISABLED": "#cbd5e1",
+            "BORDER": "#e2e8f0",
+            "GRIDLINE": "#f1f5f9",
+            "ACCENT": "#0891b2",
+            "HOVER": "#ecfeff",
+            "SCROLL_HANDLE": "#cbd5e1"
         }
 
     return f"""
-    /* Main Application Frame */
-    QMainWindow {{
+    /* Base text and background transparent inheritance */
+    QWidget {{
+        background-color: transparent;
+        color: {colors["TEXT"]};
+        font-family: "Segoe UI", sans-serif;
+        font-size: 10pt;
+    }}
+
+    QWidget:disabled {{
+        color: {colors["TEXT_DISABLED"]};
+    }}
+
+    /* Main Top-Level Windows & Dialogs */
+    QMainWindow, QDialog, QMessageBox, QWidget#centralWidget {{
         background-color: {colors["BG_MAIN"]};
     }}
 
     /* General Labels */
     QLabel {{
+        background-color: transparent;
         color: {colors["TEXT"]};
-        font-size: 10pt;
-        font-family: "Segoe UI", sans-serif;
-    }}
-    QLabel:disabled {{
-        color: {colors["TEXT_DISABLED"]};
     }}
 
     /* Checkboxes */
     QCheckBox {{
+        background-color: transparent;
         color: {colors["TEXT"]};
-        font-size: 10pt;
-        font-family: "Segoe UI", sans-serif;
     }}
-    QCheckBox:disabled {{
-        color: {colors["TEXT_DISABLED"]};
+    QCheckBox::indicator {{
+        border: 1px solid {colors["BORDER"]};
+        background: {colors["BG_INPUT"]};
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+    }}
+    QCheckBox::indicator:checked {{
+        background-color: {colors["ACCENT"]};
+        border-color: {colors["ACCENT"]};
     }}
 
     /* Menu Bar */
@@ -104,8 +119,6 @@ def get_modern_stylesheet(is_dark=None):
         background-color: {colors["BG_MAIN"]};
         color: {colors["TEXT"]};
         border-bottom: 1px solid {colors["BORDER"]};
-        font-size: 10pt;
-        font-family: "Segoe UI", sans-serif;
     }}
     QMenuBar::item {{
         background: transparent;
@@ -122,10 +135,6 @@ def get_modern_stylesheet(is_dark=None):
         border-bottom: 1px solid {colors["BORDER"]};
         spacing: 12px;
         padding: 6px;
-    }}
-    QToolBar QLabel {{
-        color: {colors["TEXT"]};
-        font-weight: bold;
     }}
     QToolBar QToolButton {{
         background-color: transparent;
@@ -147,8 +156,7 @@ def get_modern_stylesheet(is_dark=None):
     QStatusBar {{
         background-color: {colors["BG_MAIN"]};
         border-top: 1px solid {colors["BORDER"]};
-        color: {colors["TEXT"]};
-        font-size: 9pt;
+        color: {colors["TEXT_MUTED"]};
     }}
 
     /* Splitters */
@@ -164,16 +172,19 @@ def get_modern_stylesheet(is_dark=None):
         gridline-color: {colors["GRIDLINE"]};
         selection-background-color: {colors["ACCENT"]};
         selection-color: white;
-        font-size: 10pt;
-        font-family: "Segoe UI", sans-serif;
     }}
     QTreeView::item, QTableView::item {{
         padding: 6px;
         border-bottom: 1px solid {colors["GRIDLINE"]};
+        background-color: transparent;
+        color: {colors["TEXT"]};
     }}
     QTreeView::item:hover, QTableView::item:hover {{
         background-color: {colors["HOVER"]};
-        color: {colors["TEXT"]};
+    }}
+    QTreeView::item:selected, QTableView::item:selected {{
+        background-color: {colors["ACCENT"]};
+        color: white;
     }}
 
     /* Table Headers */
@@ -183,7 +194,6 @@ def get_modern_stylesheet(is_dark=None):
         padding: 8px;
         border: 1px solid {colors["BORDER"]};
         font-weight: bold;
-        font-size: 10pt;
     }}
 
     /* Tab Widget and Tab Bar */
@@ -200,7 +210,6 @@ def get_modern_stylesheet(is_dark=None):
         margin-right: 4px;
         border-top-left-radius: 4px;
         border-top-right-radius: 4px;
-        font-size: 10pt;
     }}
     QTabBar::tab:selected {{
         background-color: {colors["BG_CARD"]};
@@ -210,7 +219,6 @@ def get_modern_stylesheet(is_dark=None):
     }}
     QTabBar::tab:hover {{
         background-color: {colors["HOVER"]};
-        color: {colors["TEXT"]};
     }}
 
     /* Push Buttons */
@@ -220,7 +228,6 @@ def get_modern_stylesheet(is_dark=None):
         border: 1px solid {colors["BORDER"]};
         border-radius: 4px;
         padding: 6px 16px;
-        font-size: 10pt;
         font-weight: 500;
     }}
     QPushButton:hover {{
@@ -244,7 +251,6 @@ def get_modern_stylesheet(is_dark=None):
         border-radius: 4px;
         padding: 4px;
         color: {colors["TEXT"]};
-        font-size: 10pt;
         min-height: 28px;
     }}
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
