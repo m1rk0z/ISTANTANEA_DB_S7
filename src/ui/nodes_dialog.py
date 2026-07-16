@@ -13,6 +13,18 @@ from ui.icons import get_custom_icon
 # This prevents std::terminate() crashes when QThread objects are garbage collected while active.
 _active_threads = []
 
+def get_mac_address(ip):
+    import subprocess
+    import re
+    try:
+        output = subprocess.check_output(f"arp -a {ip}", shell=True, timeout=1.0).decode('utf-8', errors='ignore')
+        match = re.search(r"([0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2})", output)
+        if match:
+            return match.group(1).replace('-', ':').upper()
+    except Exception:
+        pass
+    return "N/A"
+
 class ScanWorker(QThread):
     # Signals to communicate with the UI
     progress_update = pyqtSignal(int, int, str)  # current, total, ip
@@ -34,9 +46,9 @@ class ScanWorker(QThread):
                 # Simulate a realistic scan of 254 hosts with mock PLC discovery
                 mock_hosts = 254
                 mock_plcs = {
-                    10: {"ModuleTypeName": "CPU 315-2 PN/DP", "SerialNumber": "123-456-7890", "ASName": "MAIN_STATION", "ModuleName": "CPU315"},
-                    25: {"ModuleTypeName": "CPU 414-3 PN/DP", "SerialNumber": "999-888-7776", "ASName": "LINE_A_CONTROLLER", "ModuleName": "CPU414"},
-                    105: {"ModuleTypeName": "CPU 317-2 DP", "SerialNumber": "555-444-3332", "ASName": "PACKAGING_PLC", "ModuleName": "CPU317"}
+                    10: {"ModuleTypeName": "CPU 315-2 PN/DP", "SerialNumber": "00:1A:2B:3C:4D:5E", "ASName": "MAIN_STATION", "ModuleName": "CPU315", "MACAddress": "00:1A:2B:3C:4D:5E"},
+                    25: {"ModuleTypeName": "CPU 414-3 PN/DP", "SerialNumber": "00:1A:2B:3C:4D:5F", "ASName": "LINE_A_CONTROLLER", "ModuleName": "CPU414", "MACAddress": "00:1A:2B:3C:4D:5F"},
+                    105: {"ModuleTypeName": "CPU 317-2 DP", "SerialNumber": "00:1A:2B:3C:4D:60", "ASName": "PACKAGING_PLC", "ModuleName": "CPU317", "MACAddress": "00:1A:2B:3C:4D:60"}
                 }
                 
                 # Subnet base
@@ -107,6 +119,9 @@ class ScanWorker(QThread):
                                 else:
                                     info = {"ModuleTypeName": "S7-1200/1500 CPU", "SerialNumber": "N/A", "ASName": "S7-1200/1500 Station", "ModuleName": "CPU1200/1500"}
                                     
+                            # Resolve MAC Address
+                            info["MACAddress"] = get_mac_address(ip)
+                            
                             self.node_found.emit(ip, info)
                             found_nodes.append((ip, info))
                             temp_client.disconnect()
@@ -114,7 +129,13 @@ class ScanWorker(QThread):
                             pass
                     else:
                         # Fallback if connection totally failed but port 102 was open
-                        unknown_info = {"ModuleTypeName": "Unknown S7 Device", "SerialNumber": "N/A", "ASName": "N/A", "ModuleName": "N/A"}
+                        unknown_info = {
+                            "ModuleTypeName": "Unknown S7 Device", 
+                            "SerialNumber": "N/A", 
+                            "ASName": "N/A", 
+                            "ModuleName": "N/A",
+                            "MACAddress": get_mac_address(ip)
+                        }
                         self.node_found.emit(ip, unknown_info)
                         found_nodes.append((ip, unknown_info))
                         
@@ -170,7 +191,7 @@ class NodesDialog(QDialog):
         # Nodes Table
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Indirizzo IP", "Modello CPU", "Numero Seriale", "Nome Stazione"])
+        self.table.setHorizontalHeaderLabels(["Indirizzo IP", "Modello CPU", "Indirizzo MAC", "Nome Stazione"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -238,7 +259,7 @@ class NodesDialog(QDialog):
         
         self.table.setItem(row, 0, ip_item)
         self.table.setItem(row, 1, QTableWidgetItem(info.get("ModuleTypeName", "Unknown")))
-        self.table.setItem(row, 2, QTableWidgetItem(info.get("SerialNumber", "N/A")))
+        self.table.setItem(row, 2, QTableWidgetItem(info.get("MACAddress", "N/A")))
         self.table.setItem(row, 3, QTableWidgetItem(info.get("ASName", "N/A")))
 
     def on_scan_finished(self, found_nodes):
@@ -276,11 +297,11 @@ class NodesDialog(QDialog):
             cpu_item = self.table.item(row, 1)
             if cpu_item:
                 cpu_model = cpu_item.text()
-                if "CPU 4" in cpu_model:
+                if "CPU 4" in cpu_model or "400" in cpu_model:
                     # S7-400 CPU is often in slot 3
                     self.selected_rack = 0
                     self.selected_slot = 3
-                elif "CPU 3" in cpu_model:
+                elif "CPU 3" in cpu_model or "300" in cpu_model:
                     # S7-300 CPU is always in slot 2
                     self.selected_rack = 0
                     self.selected_slot = 2

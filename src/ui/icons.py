@@ -150,6 +150,32 @@ def draw_monitor_icon(painter):
     ]
     painter.drawPolygon(play_points)
 
+def draw_write_icon(painter):
+    # Pencil / Edit icon
+    painter.setBrush(QBrush(QColor("#FFCA28")))
+    painter.setPen(QPen(QColor("#F57C00"), 1.2))
+    painter.save()
+    painter.translate(16, 16)
+    painter.rotate(-45)
+    painter.drawRect(-3, -10, 6, 16)
+    
+    # Pencil tip
+    painter.setBrush(QBrush(QColor("#FF8A80")))
+    points = [QPointF(-3, 6), QPointF(3, 6), QPointF(0, 11)]
+    painter.drawPolygon(points)
+    
+    # Lead tip
+    painter.setBrush(QBrush(QColor("#212121")))
+    lead_points = [QPointF(-1.5, 9), QPointF(1.5, 9), QPointF(0, 11)]
+    painter.drawPolygon(lead_points)
+    painter.restore()
+
+def draw_delete_icon(painter):
+    # Red X cross
+    painter.setPen(QPen(QColor("#E53935"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawLine(8, 8, 24, 24)
+    painter.drawLine(24, 8, 8, 24)
+
 def get_custom_icon(icon_type):
     """
     Generates a QIcon by painting custom vector graphics onto a transparent QPixmap.
@@ -176,6 +202,10 @@ def get_custom_icon(icon_type):
         draw_compare_icon(painter)
     elif icon_type == "monitor":
         draw_monitor_icon(painter)
+    elif icon_type == "write":
+        draw_write_icon(painter)
+    elif icon_type == "delete":
+        draw_delete_icon(painter)
     else:
         # Fallback empty document
         painter.setBrush(QBrush(QColor("white")))

@@ -187,7 +187,7 @@ QPushButton:disabled {{
 }}
 
 /* Inputs (LineEdits, SpinBoxes, ComboBoxes) */
-QLineEdit, QComboBox, QSpinBox {{
+QLineEdit, QComboBox {{
     background-color: white;
     border: 1px solid {WIN_BORDER};
     border-radius: 2px;
@@ -200,7 +200,14 @@ QLineEdit, QComboBox, QSpinBox {{
 }}
 
 QSpinBox {{
-    padding-right: 20px;
+    background-color: white;
+    border: 1px solid {WIN_BORDER};
+    border-radius: 2px;
+    color: {TEXT_DARK};
+    font-size: 10pt;
+    font-family: "Segoe UI", "Tahoma", sans-serif;
+    min-height: 28px;
+    padding: 3px;
 }}
 
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{

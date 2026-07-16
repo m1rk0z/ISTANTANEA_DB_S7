@@ -284,16 +284,16 @@ class MainWindow(QMainWindow):
         self.rack_input = QSpinBox()
         self.rack_input.setRange(0, 7)
         self.rack_input.setValue(0)
-        self.rack_input.setMinimumWidth(55)
-        self.rack_input.setMaximumWidth(70)
+        self.rack_input.setMinimumWidth(75)
+        self.rack_input.setMaximumWidth(90)
         toolbar.addWidget(self.rack_input)
         
         toolbar.addWidget(QLabel(" Slot: "))
         self.slot_input = QSpinBox()
         self.slot_input.setRange(0, 15)
         self.slot_input.setValue(2) # Default S7-300 is slot 2
-        self.slot_input.setMinimumWidth(55)
-        self.slot_input.setMaximumWidth(70)
+        self.slot_input.setMinimumWidth(75)
+        self.slot_input.setMaximumWidth(90)
         toolbar.addWidget(self.slot_input)
         
         self.sim_check = QCheckBox("Simula")
@@ -827,9 +827,12 @@ class MainWindow(QMainWindow):
             self.rack_input.setValue(self.nodes_dialog.selected_rack)
             self.slot_input.setValue(self.nodes_dialog.selected_slot)
             
-            # Auto-connect
-            if not self.plc_client.is_connected():
-                self.toggle_connection()
+            # Defer auto-connect to prevent Event Loop conflicts and PyQt C++ crashes
+            QTimer.singleShot(100, self.auto_connect_after_dialog)
+
+    def auto_connect_after_dialog(self):
+        if not self.plc_client.is_connected():
+            self.toggle_connection()
 
     def open_comparison_window(self):
         # We pass self.dbs_structures so CompareWindow can show structured variables if defined

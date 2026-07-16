@@ -96,7 +96,7 @@ class PLCClient:
             logger.error(f"Failed to read CPU info: {e}")
             raise PLCCommError(f"Failed to read CPU info: {str(e)}")
 
-    def list_dbs(self, start=1, end=100):
+    def list_dbs(self, start=1, end=1000):
         if not self.is_connected():
             raise PLCCommError("Not connected to PLC.")
             
@@ -135,21 +135,62 @@ class PLCClient:
                 logger.warning(f"Secondary block listing also failed: {ex}. Falling back to sequential range scanning...")
                 
         # Method 2: Probing fallback (Browsing)
-        # Scan standard DB range sequentially
+        # Scan standard DB range in parallel to prevent connection freezes and support large DB indices
         found_dbs = []
-        logger.info(f"Scanning S7 DB range {start} to {end}...")
+        logger.info(f"Scanning S7 DB range {start} to {end} in parallel...")
         
-        for db_num in range(start, end + 1):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import snap7
+        
+        # Spawn up to 5 concurrent clients to scan the range in parallel
+        num_workers = min(5, end - start + 1)
+        clients = []
+        
+        for _ in range(num_workers):
+            c = snap7.client.Client()
             try:
-                # Try reading 1 byte to check if DB exists
-                self.client.db_read(db_num, 0, 1)
-                found_dbs.append(db_num)
+                c.connect(self.ip, self.rack, self.slot)
+                clients.append(c)
             except Exception:
-                # Standard S7ProtocolError with "Object does not exist" or similar error codes
                 pass
                 
-        logger.info(f"Probing found DBs: {found_dbs}")
-        return found_dbs
+        if not clients:
+            # Fallback to single client sequential scan if connection pool failed
+            for db_num in range(start, end + 1):
+                try:
+                    self.client.db_read(db_num, 0, 1)
+                    found_dbs.append(db_num)
+                except Exception:
+                    pass
+            return sorted(found_dbs)
+            
+        active_count = len(clients)
+        db_numbers = list(range(start, end + 1))
+        
+        def probe_db_existence(db_num, idx):
+            c = clients[idx % active_count]
+            try:
+                c.db_read(db_num, 0, 1)
+                return db_num, True
+            except Exception:
+                return db_num, False
+                
+        with ThreadPoolExecutor(max_workers=active_count) as executor:
+            futures = {executor.submit(probe_db_existence, db_num, idx): db_num for idx, db_num in enumerate(db_numbers)}
+            for future in as_completed(futures):
+                db_num, found = future.result()
+                if found:
+                    found_dbs.append(db_num)
+                    
+        # Clean up connection pool
+        for c in clients:
+            try:
+                c.disconnect()
+            except Exception:
+                pass
+                
+        logger.info(f"Parallel probing found DBs: {found_dbs}")
+        return sorted(found_dbs)
 
     def probe_db_size(self, db_number):
         """
