@@ -211,8 +211,6 @@ QSpinBox {{
     background-color: white;
     border: 1px solid {WIN_BORDER};
     border-radius: 2px;
-    padding: 4px;
-    padding-right: 20px; /* Make space for custom buttons */
     color: {TEXT_DARK};
     font-size: 10pt;
     font-family: "Segoe UI", "Tahoma", sans-serif;
@@ -225,57 +223,6 @@ QSpinBox:focus {{
 QSpinBox:disabled {{
     background-color: #e8e8e8;
     color: #707070;
-}}
-
-QSpinBox::up-button {{
-    subcontrol-origin: border;
-    subcontrol-position: top right;
-    width: 18px;
-    border-left: 1px solid {WIN_BORDER};
-    border-bottom: 1px solid {WIN_BORDER};
-    background: {WIN_GRAY};
-    border-top-right-radius: 2px;
-}}
-
-QSpinBox::up-button:hover {{
-    background: #e2f4f4;
-}}
-
-QSpinBox::up-button:pressed {{
-    background: #cdeaea;
-}}
-
-QSpinBox::up-arrow {{
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 6px solid {TEXT_DARK};
-}}
-
-QSpinBox::down-button {{
-    subcontrol-origin: border;
-    subcontrol-position: bottom right;
-    width: 18px;
-    border-left: 1px solid {WIN_BORDER};
-    background: {WIN_GRAY};
-    border-bottom-right-radius: 2px;
-}}
-
-QSpinBox::down-button:hover {{
-    background: #e2f4f4;
-}}
-
-QSpinBox::down-button:pressed {{
-    background: #cdeaea;
-}}
-
-QSpinBox::down-arrow {{
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 6px solid {TEXT_DARK};
 }}
 
 /* Group Boxes */
@@ -293,5 +240,16 @@ QGroupBox::title {{
     subcontrol-position: top left;
     left: 10px;
     padding: 0 4px;
+}}
+
+/* Dialog & QMessageBox Styles for correct contrast in Windows Dark/Light mode */
+QDialog, QMessageBox {{
+    background-color: {WIN_GRAY};
+    color: {TEXT_DARK};
+}}
+
+QMessageBox QLabel {{
+    color: {TEXT_DARK};
+    background-color: transparent;
 }}
 """
