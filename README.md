@@ -52,8 +52,25 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
    - Monitoraggio ciclico in tempo reale (polling a 200ms, 500ms, 1s, 2s).
    - Modifica e scrittura di singole variabili in tempo reale sul PLC.
 
-8. **Simulatore Integrato:**
-   - L'applicazione include un PLC virtuale interno. Spuntando la casella **"Simula"** sulla barra degli strumenti, è possibile testare tutte le funzionalità dell'app (scansione, backup, ripristino, monitor live con valori fluttuanti e report comparativi) anche senza essere fisicamente collegati a un PLC reale!
+8. **Cartella Tabelle di Variabili (Watch Tables) e Notazione S7 Inglese (I, Q, M, DB):**
+   - Cartella **"Tabelle di variabili"** integrata nell'albero di progetto a sinistra (sotto il nodo PLC).
+   - Creazione, rinominazione, eliminazione e duplicazione di tabelle di variabili personalizzate dal menu contestuale del tasto destro.
+   - Notazione **inglese S7** per tutti gli indirizzi PLC:
+     - **Ingressi (Input):** `I` (es. `I0.0`, `IB0`, `IW0`, `ID0`)
+     - **Uscite (Output):** `Q` (es. `Q0.0`, `QB0`, `QW0`, `QD0`)
+     - **Merker:** `M` (es. `M0.0`, `MB0`, `MW0`, `MD0`)
+     - **Data Block:** `DB` (es. `DB1.DBX0.0`, `DB1.DBD0`)
+   - Riconoscimento ed auto-predizione del tipo di dato alla digitazione dell'indirizzo.
+   - Monitoraggio live in tempo reale con intervallo di aggiornamento personalizzabile (200ms, 500ms, 1s, 2s).
+   - Scrittura singola o cumulativa delle variabili sul PLC.
+   - **Importazione ed Esportazione in formato Excel (.xlsx):** salvataggio ed importazione diretta delle tabelle di variabili in file `.xlsx` (con supporto anche per `.json`).
+   - Persistenza automatica delle tabelle di variabili nel file `config.json`.
+
+9. **Ridimensionamento Interattivo Colonne su Tutte le Tabelle:**
+   - Tutte le tabelle dell'applicazione (`blocks_table`, visualizzatore DB, tabella di variabili, confronto snapshot, dialog nodi accessibili) consentono di regolare liberamente la larghezza di ciascuna colonna trascinando le intestazioni.
+
+10. **Simulatore Integrato:**
+    - L'applicazione include un PLC virtuale interno. Spuntando la casella **"Simula"** sulla barra degli strumenti, è possibile testare tutte le funzionalità dell'app (scansione, backup, ripristino, monitor live con valori fluttuanti e report comparativi) anche senza essere fisicamente collegati a un PLC reale!
 
 ---
 
@@ -86,6 +103,7 @@ ISTANTANEA_DB_S7/
 │   │   ├── nodes_dialog.py     # Dialog di scansione nodi accessibili
 │   │   ├── db_viewer.py        # Widget monitor live e mappatura variabili
 │   │   ├── compare_window.py   # Finestra comparativa e generazione report Excel/CSV
+│   │   ├── watch_table_viewer.py # Gestione e monitoraggio Tabelle di Variabili (Watch Tables)
 │   │   ├── icons.py            # Generatore dinamico di icone vettoriali
 │   │   └── styles.py           # Fogli di stile QSS del tema retro Siemens
 │   └── __init__.py
