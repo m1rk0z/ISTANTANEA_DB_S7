@@ -1,6 +1,6 @@
 @echo off
 echo ===================================================
-echo   IstanteS7 - Build Standalone Portable EXE
+echo   ISTANTANEA_DB_S7 - Build Standalone Portable EXE
 echo ===================================================
 echo.
 
@@ -23,14 +23,14 @@ echo [INFO] Building standalone executable with PyInstaller...
 :: --clean: clean PyInstaller cache before building
 :: --name: name of the output executable
 :: --add-data: if we had asset folders, we would add them here.
-pyinstaller --onefile --noconsole --clean --name="IstanteS7" --paths=src src/main.py
+pyinstaller --onefile --noconsole --clean --name="ISTANTANEA_DB_S7" --paths=src src/main.py
 
 if %errorlevel% eq 0 (
     echo.
     echo ===================================================
     echo   [SUCCESS] Build complete!
     echo   The portable executable is located in:
-    echo   %CD%\dist\IstanteS7.exe
+    echo   %CD%\dist\ISTANTANEA_DB_S7.exe
     echo ===================================================
 ) else (
     echo.

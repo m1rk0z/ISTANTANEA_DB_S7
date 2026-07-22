@@ -5,7 +5,7 @@ import ipaddress
 import logging
 import re
 
-logger = logging.getLogger("IstanteS7.Utils")
+logger = logging.getLogger("ISTANTANEA_DB_S7.Utils")
 
 def get_local_ip_adapters():
     """

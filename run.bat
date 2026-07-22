@@ -1,6 +1,6 @@
 @echo off
 echo ===================================================
-echo   IstanteS7 - Siemens PLC DB Backup Bootstrap
+echo   ISTANTANEA_DB_S7 - Siemens PLC DB Backup Bootstrap
 echo ===================================================
 echo.
 
@@ -37,7 +37,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [INFO] Launching IstanteS7...
+echo [INFO] Launching ISTANTANEA_DB_S7...
 python src/main.py
 if %errorlevel% neq 0 (
     echo [WARNING] Application exited with code %errorlevel%.

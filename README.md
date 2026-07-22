@@ -1,6 +1,6 @@
-# IstanteS7 - Siemens PLC S7 DB Snapshot & Backup Tool
+# ISTANTANEA_DB_S7 - Siemens PLC S7 DB Snapshot & Backup Tool
 
-**IstanteS7** è un'applicazione Windows portable, leggera e intuitiva, progettata per facilitare il backup, il ripristino, il monitoraggio in tempo reale e il confronto dei Data Block (DB) dei PLC Siemens della famiglia **S7-300** e **S7-400**. 
+**ISTANTANEA_DB_S7** è un'applicazione Windows portable, leggera e intuitiva, progettata per facilitare il backup, il ripristino, il monitoraggio in tempo reale e il confronto dei Data Block (DB) dei PLC Siemens della famiglia **S7-300** e **S7-400**. 
 
 L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC Manager Step 7**, combinando un'estetica retro con funzionalità diagnostiche moderne.
 
@@ -25,7 +25,7 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
 3. **Salvataggio dello Snapshot in Excel (.xlsx) con struttura a Fogli di Lavoro per DB:**
    - **Foglio Overview:** Un foglio iniziale contenente i metadati di connessione (IP PLC, Data/Ora, Simulazione) e la lista complessiva di tutte le DB rilevate con descrizione simbolica.
    - **Un Foglio per DB:** Ogni blocco viene esportato in un foglio dedicato (es. `DB 10`). I dati non sono in esadecimale grezzo ma visualizzati come variabili individuali (Nome, Tipo Dato, Offset, Valore Live tradotto in tipo nativo di Excel: float, intero, bool) imitando il visualizzatore dell'applicazione.
-   - **Editing ed Importazione:** L'utente può aprire il foglio Excel, modificare i valori all'interno delle celle e caricare direttamente l'Excel in IstanteS7 per effettuare ripristini nel PLC o confronti. L'applicazione ricostruisce automaticamente sia il bytearray grezzo che la struttura delle variabili dal foglio Excel!
+   - **Editing ed Importazione:** L'utente può aprire il foglio Excel, modificare i valori all'interno delle celle e caricare direttamente l'Excel in ISTANTANEA_DB_S7 per effettuare ripristini nel PLC o confronti. L'applicazione ricostruisce automaticamente sia il bytearray grezzo che la struttura delle variabili dal foglio Excel!
 
 4. **Ripristino Snapshot (Restore):**
    - Caricamento di file snapshot sia `.xlsx` multischeda che `.s7d` / `.json` tradizionali.
@@ -126,7 +126,7 @@ Questo script si occuperà automaticamente di:
 ### 2. Generazione dell'applicazione Portable (.exe)
 Fai doppio clic sul file **`build.bat`**.
 Lo script utilizzerà `PyInstaller` per impacchettare l'interprete Python, le librerie grafiche e i driver in un **singolo file eseguibile autonomo**:
-- Il file compilato sarà salvato nella cartella **`dist/IstanteS7.exe`**.
+- Il file compilato sarà salvato nella cartella **`dist/ISTANTANEA_DB_S7.exe`**.
 - Questo file è **completamente portable**: può essere copiato su una chiavetta USB e avviato su qualsiasi computer Windows senza necessità di installare Python o altre dipendenze!
 
 ---

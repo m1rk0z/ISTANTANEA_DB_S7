@@ -3,7 +3,7 @@ import logging
 import struct
 import time
 
-logger = logging.getLogger("IstanteS7.PLCComm")
+logger = logging.getLogger("ISTANTANEA_DB_S7.PLCComm")
 
 class PLCCommError(Exception):
     """Custom exception for PLC communication errors."""

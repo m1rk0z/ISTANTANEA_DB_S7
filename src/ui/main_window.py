@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # Window properties
-        self.setWindowTitle("IstanteS7 - Siemens S7 PLC Backup & Tool")
+        self.setWindowTitle("ISTANTANEA_DB_S7 - Siemens S7 PLC Backup & Tool")
         self.setMinimumSize(1000, 650)
         self.setWindowIcon(get_custom_icon("plc"))
         
@@ -1458,8 +1458,8 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.about(
-            self, "Informazioni su IstanteS7",
-            "<h3>IstanteS7 v1.0.0</h3>"
+            self, "Informazioni su ISTANTANEA_DB_S7",
+            "<h3>ISTANTANEA_DB_S7 v1.0.0</h3>"
             "<p>Applicazione portable per il backup, ripristino e monitoraggio live "
             "dei Data Blocks (DB) per PLC Siemens Simatic S7-300 e S7-400.</p>"
             "<p>Stile grafico ispirato a <i>Siemens Simatic Manager Step 7</i>.</p>"

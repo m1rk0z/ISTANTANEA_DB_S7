@@ -19,8 +19,8 @@ def main():
         ]
     )
     
-    logger = logging.getLogger("IstanteS7")
-    logger.info("Initializing IstanteS7 Application...")
+    logger = logging.getLogger("ISTANTANEA_DB_S7")
+    logger.info("Initializing ISTANTANEA_DB_S7 Application...")
     
     # Initialize PyQt application
     app = QApplication(sys.argv)

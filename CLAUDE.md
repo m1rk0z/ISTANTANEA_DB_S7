@@ -1,6 +1,6 @@
 # CLAUDE.md - Development Guide
 
-This file contains instructions for building, running, testing, and understanding the architecture of **IstanteS7**.
+This file contains instructions for building, running, testing, and understanding the architecture of **ISTANTANEA_DB_S7**.
 
 ## 🛠️ Common Commands
 
@@ -16,9 +16,9 @@ This file contains instructions for building, running, testing, and understandin
 * Windows: `build.bat` (automatically kills running instances and compiles using PyInstaller)
 * Manual PyInstaller command:
   ```powershell
-  .\venv\Scripts\pyinstaller --onefile --noconsole --clean --name="IstanteS7" --paths=src src/main.py
+  .\venv\Scripts\pyinstaller --onefile --noconsole --clean --name="ISTANTANEA_DB_S7" --paths=src src/main.py
   ```
-  The output binary will be located in `dist/IstanteS7.exe`.
+  The output binary will be located in `dist/ISTANTANEA_DB_S7.exe`.
 
 ### Running Tests
 * Run unit tests:
@@ -56,4 +56,4 @@ This file contains instructions for building, running, testing, and understandin
 
 ### 3. Fault Tolerance
 * Individual DB reads during backup or online comparison are wrapped in `try-except` blocks. Failing to read a specific DB does not halt the operation; the block is logged as skipped, and a summary warning list is shown to the user upon completion.
-* PyInstaller compiles must be preceded by `taskkill /F /IM IstanteS7.exe` to release file locks on target binaries.
+* PyInstaller compiles must be preceded by `taskkill /F /IM ISTANTANEA_DB_S7.exe` to release file locks on target binaries.
