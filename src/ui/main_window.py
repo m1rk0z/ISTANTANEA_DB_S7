@@ -433,10 +433,18 @@ class MainWindow(QMainWindow):
         self.add_manual_db_btn.clicked.connect(self.add_db_manually)
         action_layout.addWidget(self.add_manual_db_btn)
         
-        # Scan Range Button
-        self.scan_range_btn = QPushButton("Scansiona Intervallo DB...")
-        self.scan_range_btn.clicked.connect(self.toggle_db_range_scan)
-        action_layout.addWidget(self.scan_range_btn)
+        # Start DB Scan Button
+        self.start_scan_btn = QPushButton("Avvia Scansione DB...")
+        self.start_scan_btn.setIcon(get_custom_icon("scan"))
+        self.start_scan_btn.clicked.connect(self.start_db_scan)
+        action_layout.addWidget(self.start_scan_btn)
+        
+        # Stop DB Scan Button
+        self.stop_scan_btn = QPushButton("Ferma Scansione")
+        self.stop_scan_btn.setIcon(get_custom_icon("delete"))
+        self.stop_scan_btn.setEnabled(False)
+        self.stop_scan_btn.clicked.connect(self.stop_db_scan)
+        action_layout.addWidget(self.stop_scan_btn)
         
         # Import Symbols Button
         self.import_symbols_btn = QPushButton("Importa Simbolico...")
@@ -693,7 +701,9 @@ class MainWindow(QMainWindow):
         # Automatically trigger background scan for all DBs (1-65535) if the PLC block listing returned nothing (e.g. S7-400 fallback)
         if not dbs_list and not self.plc_client.simulate:
             self.update_status_bar("Connesso. Avvio scansione automatica DB (1-65535) in corso...")
-            self.scan_range_btn.setText("Ferma Scansione")
+            self.start_scan_btn.setEnabled(False)
+            self.stop_scan_btn.setEnabled(True)
+            self.stop_scan_btn.setText("Ferma Scansione")
             self.db_scan_worker = DBScanWorker(self.plc_client, 1, 65535)
             self.db_scan_worker.progress.connect(self.on_db_scan_progress)
             self.db_scan_worker.db_found.connect(self.on_db_found)
@@ -749,6 +759,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
             self.db_scan_worker.is_cancelled = True
             self.db_scan_worker.wait()
+            
+        self.start_scan_btn.setEnabled(True)
+        self.stop_scan_btn.setEnabled(False)
+        self.stop_scan_btn.setText("Ferma Scansione")
             
         self.connect_btn.setText("Connetti")
         self.connect_btn.setEnabled(True)
@@ -1685,20 +1699,15 @@ class MainWindow(QMainWindow):
         self.update_project_tree_online()
         self.update_status_bar(f"Aggiunto manualmente DB {db_num} con dimensione {size} byte.")
 
-    def toggle_db_range_scan(self):
-        # If already running, cancel it
+    def start_db_scan(self):
         if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
-            self.db_scan_worker.is_cancelled = True
-            self.scan_range_btn.setText("Interruzione...")
-            self.scan_range_btn.setEnabled(False)
+            QMessageBox.information(self, "Scansione in corso", "Una scansione dei Data Block è già in corso.")
             return
 
-        # Check if connected
         if not self.plc_client.is_connected():
             QMessageBox.warning(self, "PLC non connesso", "Devi connetterti al PLC prima di poter scansionare l'intervallo DB.")
             return
 
-        # Show ScanRangeDialog
         dialog = ScanRangeDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -1706,8 +1715,9 @@ class MainWindow(QMainWindow):
         start_val = dialog.start_input.value()
         end_val = dialog.end_input.value()
 
-        # Setup worker
-        self.scan_range_btn.setText("Ferma Scansione")
+        self.start_scan_btn.setEnabled(False)
+        self.stop_scan_btn.setEnabled(True)
+        self.stop_scan_btn.setText("Ferma Scansione")
         self.update_status_bar(f"Scansione DB avviata (da DB {start_val} a DB {end_val})...")
         
         self.db_scan_worker = DBScanWorker(self.plc_client, start_val, end_val)
@@ -1715,6 +1725,13 @@ class MainWindow(QMainWindow):
         self.db_scan_worker.db_found.connect(self.on_db_found)
         self.db_scan_worker.finished.connect(self.on_db_scan_finished)
         self.db_scan_worker.start()
+
+    def stop_db_scan(self):
+        if hasattr(self, 'db_scan_worker') and self.db_scan_worker.isRunning():
+            self.db_scan_worker.is_cancelled = True
+            self.stop_scan_btn.setText("Arresto...")
+            self.stop_scan_btn.setEnabled(False)
+            self.update_status_bar("Interruzione scansione DB in corso...")
 
     def on_db_found(self, db_num, size):
         if db_num not in self.dbs_list:
@@ -1730,7 +1747,8 @@ class MainWindow(QMainWindow):
         self.update_status_bar(f"Scansione DB in corso: {completed} di {total} verificati ({pct}%)...")
 
     def on_db_scan_finished(self, found_dbs):
-        self.scan_range_btn.setText("Scansiona Intervallo DB...")
-        self.scan_range_btn.setEnabled(True)
+        self.start_scan_btn.setEnabled(True)
+        self.stop_scan_btn.setEnabled(False)
+        self.stop_scan_btn.setText("Ferma Scansione")
         self.update_status_bar(f"Scansione DB completata. Trovati {len(found_dbs)} DB nell'intervallo.")
         QMessageBox.information(self, "Scansione Completata", f"Scansione completata. Trovati {len(found_dbs)} blocchi DB.")

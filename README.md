@@ -16,7 +16,7 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
 2. **Backup Snapshot dei Data Block (DB) e tolleranza all'errore:**
    - Connessione istantanea (sotto il secondo) grazie al caricamento dei DB asincrono e non bloccante.
    - Scansione automatica in background della memoria PLC (fino a 65535 DB) all'avvio del collegamento qualora la CPU non supporti l'elenco nativo (come le famiglie S7-400), mantenendo l'interfaccia interattiva e reattiva fin dal primo istante.
-   - Scansione manuale di un intervallo personalizzato di DB (con default predefinito `1` a `65535`) con un pool parallelo ottimizzato a 6 thread che evita qualsiasi sovraccarico della CP del PLC.
+   - Pulsanti dedicati **"Avvia Scansione DB..."** e **"Ferma Scansione"** per il controllo immediato dell'esplorazione manuale dell'intervallo di DB (con default predefinito `1` a `65535`) con un pool parallelo ottimizzato a 6 thread.
    - Elenco dinamico di tutti i DB rilevati sul PLC con le rispettive dimensioni reali in byte.
    - Selezione selettiva (tramite checkbox) o totale dei DB da salvare.
    - **Tolleranza all'errore:** Se un DB configurato o presente nel simbolico restituisce un errore di lettura a causa di blocchi protetti o indirizzi inesistenti, la procedura di backup non si interrompe. Il DB viene loggato, l'operazione prosegue completando il backup dei restanti blocchi e un popup finale di avviso elenca in dettaglio le anomalie riscontrate.
