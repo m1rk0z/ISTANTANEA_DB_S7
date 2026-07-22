@@ -6,6 +6,22 @@ L'interfaccia grafica richiama lo stile classico del celebre **Siemens SIMATIC M
 
 ---
 
+## 📸 Screenshots dell'Applicazione
+
+### 1. Finestra Principale & Albero di Progetto (Simatic Manager style)
+![Finestra Principale ISTANTANEA_DB_S7](docs/images/screenshot_main.png)
+
+### 2. Cartella Tabelle di Variabili (Notazione S7 Inglese I, Q, M, DB & Monitor Live)
+![Tabelle di Variabili](docs/images/screenshot_watch_table.png)
+
+### 3. Editor Mappa DB e Monitoraggio In Tempo Reale
+![Editor Mappa DB](docs/images/screenshot_db_viewer.png)
+
+### 4. Confronto Dettagliato Snapshot e PLC Live
+![Confronto Snapshot](docs/images/screenshot_compare.png)
+
+---
+
 ## 🚀 Caratteristiche Principali
 
 1. **Scansione Nodi Accessibili (Accessible Nodes):**
