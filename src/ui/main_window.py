@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QSpinBox, QCheckBox, QPushButton, 
                              QSplitter, QTreeView, QTabWidget, QTableWidget, 
                              QTableWidgetItem, QFileDialog, QMessageBox, 
-                             QHeaderView, QStatusBar, QComboBox, QDialog, QGridLayout)
+                             QHeaderView, QStatusBar, QComboBox, QDialog, QGridLayout, QMenu)
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 import json
@@ -10,10 +10,12 @@ import datetime
 import time
 
 from plc_comm import PLCClient, PLCCommError
+from utils import parse_s7_data, pack_s7_data
 from ui.icons import get_custom_icon
 from ui.nodes_dialog import NodesDialog
 from ui.db_viewer import DBViewer
 from ui.compare_window import CompareWindow
+from ui.watch_table_viewer import WatchTableViewer
 
 class ConnectWorker(QThread):
     connected = pyqtSignal(list, dict)
@@ -216,6 +218,7 @@ class MainWindow(QMainWindow):
         self.dbs_list = []      # List of DB numbers found on PLC
         self.dbs_sizes = {}     # {db_num: size}
         self.dbs_structures = {} # {db_num: [variables]}
+        self.watch_tables = {}  # {"Tabella_1": [variables]}
         
         self.config_path = "config.json"
         self.profiles = []
@@ -223,7 +226,7 @@ class MainWindow(QMainWindow):
         # Set up GUI layouts
         self.init_ui()
         
-        # Load last connection and directory profiles
+        # Load last connection, directory profiles, and watch tables
         self.load_config()
         
         # Heartbeat timer for connection status check
@@ -255,6 +258,8 @@ class MainWindow(QMainWindow):
         self.tree_model.setHorizontalHeaderLabels(["Oggetti di Progetto"])
         self.tree.setModel(self.tree_model)
         self.tree.clicked.connect(self.on_tree_node_clicked)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.on_tree_context_menu)
         splitter.addWidget(self.tree)
         
         # Build initial Tree hierarchy
@@ -275,6 +280,14 @@ class MainWindow(QMainWindow):
             on_structures_changed=self.on_structures_changed
         )
         self.tabs.addTab(self.db_viewer_tab, "Editor Mappa DB (Monitor)")
+        
+        # Tab 3: Watch Table Viewer
+        self.watch_table_tab = WatchTableViewer(
+            plc_client=self.plc_client,
+            watch_tables=self.watch_tables,
+            on_tables_changed=self.on_watch_tables_changed
+        )
+        self.tabs.addTab(self.watch_table_tab, "Tabella di Variabili")
         
         # Set split ratio (Tree 25%, Workspace 75%)
         splitter.setSizes([250, 750])
@@ -436,7 +449,11 @@ class MainWindow(QMainWindow):
         self.blocks_table = QTableWidget()
         self.blocks_table.setColumnCount(4)
         self.blocks_table.setHorizontalHeaderLabels(["Backup", "Numero DB", "Dimensione (byte)", "Descrizione"])
-        self.blocks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.blocks_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.blocks_table.horizontalHeader().setStretchLastSection(True)
+        self.blocks_table.setColumnWidth(0, 80)
+        self.blocks_table.setColumnWidth(1, 110)
+        self.blocks_table.setColumnWidth(2, 140)
         self.blocks_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.blocks_table.itemDoubleClicked.connect(self.on_block_row_double_clicked)
         layout.addWidget(self.blocks_table)
@@ -485,6 +502,27 @@ class MainWindow(QMainWindow):
         self.blocks_folder_node.setFlags(self.blocks_folder_node.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.plc_node.appendRow(self.blocks_folder_node)
         
+        # Watch Tables Folder Node
+        self.var_tables_folder_node = QStandardItem("Tabelle di variabili")
+        self.var_tables_folder_node.setIcon(get_custom_icon("project"))
+        self.var_tables_folder_node.setFlags(self.var_tables_folder_node.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.plc_node.appendRow(self.var_tables_folder_node)
+        
+        self.update_project_tree_watch_tables()
+        self.tree.expandAll()
+
+    def update_project_tree_watch_tables(self):
+        if not hasattr(self, 'var_tables_folder_node') or not self.var_tables_folder_node:
+            return
+            
+        self.var_tables_folder_node.removeRows(0, self.var_tables_folder_node.rowCount())
+        for tname in self.watch_tables.keys():
+            t_item = QStandardItem(tname)
+            t_item.setIcon(get_custom_icon("db"))
+            t_item.setData(tname, Qt.ItemDataRole.UserRole)
+            t_item.setFlags(t_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.var_tables_folder_node.appendRow(t_item)
+            
         self.tree.expandAll()
 
     def update_project_tree_online(self):
@@ -503,6 +541,7 @@ class MainWindow(QMainWindow):
             db_item.setFlags(db_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.blocks_folder_node.appendRow(db_item)
             
+        self.update_project_tree_watch_tables()
         self.tree.expandAll()
 
     def on_tree_node_clicked(self, index):
@@ -515,7 +554,13 @@ class MainWindow(QMainWindow):
         
         if text == "Blocchi" or item == self.blocks_folder_node:
             self.tabs.setCurrentIndex(0) # Go to DB blocks list
-        elif db_num is not None:
+        elif text == "Tabelle di variabili" or item == self.var_tables_folder_node:
+            self.tabs.setCurrentIndex(2) # Go to Watch Tables
+        elif item.parent() == self.var_tables_folder_node:
+            self.tabs.setCurrentIndex(2) # Go to Watch Tables
+            tname = item.data(Qt.ItemDataRole.UserRole) or text
+            self.watch_table_tab.refresh_table_list(select_table=tname)
+        elif db_num is not None and item.parent() == self.blocks_folder_node:
             self.tabs.setCurrentIndex(1) # Go to individual DB mapper
             size = self.dbs_sizes.get(db_num, 0)
             if size <= 0:
@@ -531,6 +576,40 @@ class MainWindow(QMainWindow):
                         self.blocks_table.item(row, 2).setText(str(size))
                         break
             self.db_viewer_tab.set_active_db(db_num, size)
+
+    def on_tree_context_menu(self, position):
+        index = self.tree.indexAt(position)
+        if not index.isValid():
+            return
+        item = self.tree_model.itemFromIndex(index)
+        if not item:
+            return
+            
+        menu = QMenu(self)
+        if item == self.var_tables_folder_node:
+            act_new = menu.addAction("Nuova tabella di variabili...")
+            act_new.setIcon(get_custom_icon("add"))
+            act_new.triggered.connect(lambda: self.watch_table_tab.create_new_table())
+        elif item.parent() == self.var_tables_folder_node:
+            tname = item.data(Qt.ItemDataRole.UserRole) or item.text()
+            
+            act_open = menu.addAction(f"Apri '{tname}'")
+            act_open.triggered.connect(lambda: (self.tabs.setCurrentIndex(2), self.watch_table_tab.refresh_table_list(select_table=tname)))
+            
+            act_rename = menu.addAction("Rinomina tabella...")
+            act_rename.triggered.connect(lambda: self.watch_table_tab.rename_current_table(old_name=tname))
+            
+            act_delete = menu.addAction("Elimina tabella")
+            act_delete.setIcon(get_custom_icon("delete"))
+            act_delete.triggered.connect(lambda: self.watch_table_tab.delete_current_table(target_name=tname))
+
+        if not menu.isEmpty():
+            menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def on_watch_tables_changed(self, watch_tables):
+        self.watch_tables = watch_tables
+        self.update_project_tree_watch_tables()
+        self.save_config()
 
     def on_block_row_double_clicked(self, item):
         row = item.row()
@@ -563,6 +642,8 @@ class MainWindow(QMainWindow):
             
         self.plc_client = PLCClient(simulate=simulate)
         self.db_viewer_tab.plc_client = self.plc_client
+        if hasattr(self, 'watch_table_tab') and self.watch_table_tab:
+            self.watch_table_tab.set_plc_client(self.plc_client)
 
     def toggle_connection(self):
         if self.plc_client.is_connected():
@@ -629,6 +710,9 @@ class MainWindow(QMainWindow):
         self.backup_selected_btn.setEnabled(True)
         self.backup_all_btn.setEnabled(True)
         self.db_viewer_tab.monitor_checkbox.setEnabled(True)
+        if hasattr(self, 'watch_table_tab') and self.watch_table_tab:
+            self.watch_table_tab.set_plc_client(self.plc_client)
+            self.watch_table_tab.monitor_checkbox.setEnabled(True)
         
         try:
             self.populate_blocks_table()
@@ -674,6 +758,9 @@ class MainWindow(QMainWindow):
         # Stop DB viewer monitoring
         self.db_viewer_tab.monitor_checkbox.setChecked(False)
         self.db_viewer_tab.monitor_checkbox.setEnabled(False)
+        if hasattr(self, 'watch_table_tab') and self.watch_table_tab:
+            self.watch_table_tab.monitor_checkbox.setChecked(False)
+            self.watch_table_tab.monitor_checkbox.setEnabled(False)
         
         self.update_status_bar("Disconnesso.")
 
@@ -839,30 +926,32 @@ class MainWindow(QMainWindow):
                 # Save to Excel Snapshot format
                 import openpyxl
                 wb = openpyxl.Workbook()
-                ws = wb.active
-                ws.title = "S7 Snapshot"
+                
+                # First sheet is Overview
+                ws_overview = wb.active
+                ws_overview.title = "Overview"
                 
                 # Write metadata
-                ws["A1"] = "PLC IP"
-                ws["B1"] = self.plc_client.ip
-                ws["A2"] = "Timestamp"
-                ws["B2"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ws["A3"] = "Simulation"
-                ws["B3"] = str(self.plc_client.simulate)
+                ws_overview["A1"] = "PLC IP"
+                ws_overview["B1"] = self.plc_client.ip
+                ws_overview["A2"] = "Timestamp"
+                ws_overview["B2"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws_overview["A3"] = "Simulation"
+                ws_overview["B3"] = str(self.plc_client.simulate)
                 
-                # Write headers
-                ws["A5"] = "DB"
-                ws["B5"] = "Size"
-                ws["C5"] = "DataHex"
-                ws["D5"] = "Description"
+                # Write headers for overview
+                ws_overview["A5"] = "Data Block"
+                ws_overview["B5"] = "Size (Bytes)"
+                ws_overview["C5"] = "Description"
                 
                 header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
                 header_fill = openpyxl.styles.PatternFill(start_color="008080", end_color="008080", fill_type="solid")
-                for col in ["A", "B", "C", "D"]:
-                    ws[f"{col}5"].font = header_font
-                    ws[f"{col}5"].fill = header_fill
-                    
-                row_idx = 6
+                for col in ["A", "B", "C"]:
+                    ws_overview[f"{col}5"].font = header_font
+                    ws_overview[f"{col}5"].fill = header_fill
+                
+                overview_row = 6
+                
                 for db in dbs_list:
                     size = self.dbs_sizes.get(db, 0)
                     if size == 0:
@@ -872,11 +961,113 @@ class MainWindow(QMainWindow):
                         data = self.plc_client.read_db_bytes(db, size)
                         desc = descriptions.get(db, f"Blocco Dati DB{db}")
                         
-                        ws.cell(row=row_idx, column=1, value=db)
-                        ws.cell(row=row_idx, column=2, value=size)
-                        ws.cell(row=row_idx, column=3, value=data.hex().upper())
-                        ws.cell(row=row_idx, column=4, value=desc)
-                        row_idx += 1
+                        # Add row to Overview
+                        ws_overview.cell(row=overview_row, column=1, value=f"DB {db}")
+                        ws_overview.cell(row=overview_row, column=2, value=size)
+                        ws_overview.cell(row=overview_row, column=3, value=desc)
+                        overview_row += 1
+                        
+                        # Create dedicated sheet for this DB!
+                        ws_db = wb.create_sheet(title=f"DB {db}")
+                        
+                        # Write metadata at top of sheet
+                        ws_db["A1"] = "DB"
+                        ws_db["B1"] = "Size"
+                        ws_db["C1"] = "Description"
+                        ws_db["D1"] = "PLC IP"
+                        ws_db["E1"] = "Timestamp"
+                        
+                        ws_db["A2"] = db
+                        ws_db["B2"] = size
+                        ws_db["C2"] = desc
+                        ws_db["D2"] = self.plc_client.ip
+                        ws_db["E2"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Style metadata header
+                        meta_font = openpyxl.styles.Font(bold=True, color="3F3F46")
+                        for col in ["A", "B", "C", "D", "E"]:
+                            ws_db[f"{col}1"].font = meta_font
+                            
+                        # Write variable headers starting at row 4
+                        ws_db["A4"] = "Nome Variabile"
+                        ws_db["B4"] = "Tipo Dato"
+                        ws_db["C4"] = "Offset (Byte.Bit)"
+                        ws_db["D4"] = "Valore"
+                        
+                        for col in ["A", "B", "C", "D"]:
+                            ws_db[f"{col}4"].font = header_font
+                            ws_db[f"{col}4"].fill = header_fill
+                            
+                        # Get variable structures
+                        vars_list = []
+                        if db in self.dbs_structures:
+                            vars_list = list(self.dbs_structures[db])
+                        else:
+                            # Generate default sequence of WORDs
+                            for offset in range(0, size - 1, 2):
+                                vars_list.append({
+                                    "name": f"DB{db}.DBW{offset}",
+                                    "type": "WORD",
+                                    "offset": float(offset)
+                                })
+                            if size % 2 != 0:
+                                vars_list.append({
+                                    "name": f"DB{db}.DBB{size-1}",
+                                    "type": "BYTE",
+                                    "offset": float(size-1)
+                                })
+                                
+                        # Write rows
+                        row_idx = 5
+                        for var in vars_list:
+                            name = var["name"]
+                            dtype = var["type"]
+                            offset = var["offset"]
+                            
+                            # Parse live value from data
+                            offset_str = str(offset)
+                            if "." in offset_str:
+                                p = offset_str.split('.')
+                                byte_off = int(p[0])
+                                bit_off = int(p[1])
+                            else:
+                                byte_off = int(offset)
+                                bit_off = 0
+                                
+                            val = parse_s7_data(dtype, data, byte_off, bit_off)
+                            
+                            ws_db.cell(row=row_idx, column=1, value=name)
+                            ws_db.cell(row=row_idx, column=2, value=dtype)
+                            
+                            # Format offset neatly (e.g. 2.0 or 2.3)
+                            if int(offset) == offset:
+                                offset_formatted = f"{int(offset)}.0"
+                            else:
+                                offset_formatted = f"{int(offset)}.{int(round((offset - int(offset)) * 10))}"
+                                
+                            ws_db.cell(row=row_idx, column=3, value=offset_formatted)
+                            
+                            # Write parsed value
+                            if val is not None:
+                                # Ensure appropriate numeric types for Excel
+                                if dtype in ["INT", "WORD", "DINT", "DWORD", "BYTE"]:
+                                    try:
+                                        val = int(val)
+                                    except:
+                                        pass
+                                elif dtype == "REAL":
+                                    try:
+                                        val = float(val)
+                                    except:
+                                        pass
+                                elif dtype == "BOOL":
+                                    val = bool(val)
+                                ws_db.cell(row=row_idx, column=4, value=val)
+                            else:
+                                ws_db.cell(row=row_idx, column=4, value="")
+                                
+                            row_idx += 1
+                            
                         success_count += 1
                     except Exception as db_err:
                         failed_dbs.append((db, str(db_err)))
@@ -954,31 +1145,79 @@ class MainWindow(QMainWindow):
                 # Load from Excel
                 import openpyxl
                 wb = openpyxl.load_workbook(filepath, data_only=True)
-                ws = wb.active
                 
+                # Check for Overview sheet to parse top-level metadata
+                plc_ip = ""
+                timestamp = ""
+                is_simulated = False
+                if "Overview" in wb.sheetnames:
+                    ws_overview = wb["Overview"]
+                    plc_ip = ws_overview["B1"].value
+                    timestamp = ws_overview["B2"].value
+                    is_simulated = str(ws_overview["B3"].value).lower() == "true"
+                    
                 backup_data = {
-                    "plc_ip": ws["B1"].value,
-                    "timestamp": ws["B2"].value,
-                    "is_simulated": str(ws["B3"].value).lower() == "true",
+                    "plc_ip": plc_ip,
+                    "timestamp": timestamp,
+                    "is_simulated": is_simulated,
                     "dbs": {}
                 }
                 
-                row_idx = 6
-                while True:
-                    db_val = ws.cell(row=row_idx, column=1).value
-                    if db_val is None:
-                        break
-                    db_num = int(db_val)
-                    size = int(ws.cell(row=row_idx, column=2).value or 0)
-                    data_hex = str(ws.cell(row=row_idx, column=3).value or "").strip()
-                    desc = str(ws.cell(row=row_idx, column=4).value or "")
-                    
-                    backup_data["dbs"][str(db_num)] = {
-                        "size": size,
-                        "data": data_hex,
-                        "description": desc
-                    }
-                    row_idx += 1
+                # Initialize variables structures map if not existing
+                if not hasattr(self, 'dbs_structures'):
+                    self.dbs_structures = {}
+                
+                # Parse each DB worksheet
+                for sheet_name in wb.sheetnames:
+                    if sheet_name.replace(" ", "").upper().startswith("DB"):
+                        ws = wb[sheet_name]
+                        # Row 2 contains: A2=DB, B2=Size, C2=Description
+                        db_val = ws.cell(row=2, column=1).value
+                        if db_val is None:
+                            continue
+                        db_num = int(db_val)
+                        size = int(ws.cell(row=2, column=2).value or 0)
+                        desc = str(ws.cell(row=2, column=3).value or "")
+                        
+                        byte_data = bytearray(size)
+                        
+                        # Rebuild variable structures dynamically from Excel sheet!
+                        self.dbs_structures[db_num] = []
+                        
+                        row_idx = 5
+                        while True:
+                            name_val = ws.cell(row=row_idx, column=1).value
+                            if name_val is None:
+                                break
+                            dtype = str(ws.cell(row=row_idx, column=2).value or "").strip()
+                            offset_val = ws.cell(row=row_idx, column=3).value
+                            value = ws.cell(row=row_idx, column=4).value
+                            
+                            if offset_val is not None:
+                                offset_str = str(offset_val).strip()
+                                if "." in offset_str:
+                                    parts = offset_str.split('.')
+                                    byte_off = int(parts[0])
+                                    bit_off = int(parts[1])
+                                else:
+                                    byte_off = int(float(offset_str)) if offset_str else 0
+                                    bit_off = 0
+                                    
+                                pack_s7_data(dtype, value, byte_off, bit_off, byte_data)
+                                
+                                self.dbs_structures[db_num].append({
+                                    "name": name_val,
+                                    "type": dtype,
+                                    "offset": float(offset_str)
+                                })
+                                
+                            row_idx += 1
+                            
+                        backup_data["dbs"][str(db_num)] = {
+                            "size": size,
+                            "data": byte_data.hex().upper(),
+                            "description": desc
+                        }
             else:
                 # Load from legacy JSON/S7D
                 with open(filepath, 'r') as f:
@@ -1256,6 +1495,12 @@ class MainWindow(QMainWindow):
                         {"name": "CPU Test (200.100.0.11)", "ip": "200.100.0.11", "rack": 0, "slot": 3, "simulate": False}
                     ]
                 self.update_rubrica_combo()
+                
+                # Watch tables
+                self.watch_tables = config.get("watch_tables", {})
+                if hasattr(self, 'watch_table_tab') and self.watch_table_tab:
+                    self.watch_table_tab.set_watch_tables(self.watch_tables)
+                self.update_project_tree_watch_tables()
             except Exception as e:
                 print(f"Error loading config: {e}")
         else:
@@ -1276,7 +1521,8 @@ class MainWindow(QMainWindow):
                     "slot": int(self.slot_input.currentText()),
                     "simulate": self.sim_check.isChecked()
                 },
-                "profiles": self.profiles
+                "profiles": self.profiles,
+                "watch_tables": self.watch_tables
             }
             with open(self.config_path, 'w') as f:
                 json.dump(config, f, indent=4)

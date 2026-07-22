@@ -89,7 +89,13 @@ class CompareWindow(QDialog):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Data Block", "Offset / Var", "Tipo", "Valore Origine A", "Valore Origine B", "Dettaglio"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(0, 100)
+        self.table.setColumnWidth(1, 120)
+        self.table.setColumnWidth(2, 80)
+        self.table.setColumnWidth(3, 140)
+        self.table.setColumnWidth(4, 140)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self.table)
         
@@ -206,18 +212,36 @@ class CompareWindow(QDialog):
             # Fetch all DBs and their current values
             db_list = self.plc_client.list_dbs()
             snap_data = {}
+            failed_dbs = []
             
             for db_num in db_list:
                 size = self.plc_client.get_db_size(db_num)
-                data = self.plc_client.read_db_bytes(db_num, size)
-                snap_data[db_num] = {
-                    "size": size,
-                    "data": data
-                }
+                if size == 0:
+                    continue
+                try:
+                    data = self.plc_client.read_db_bytes(db_num, size)
+                    snap_data[db_num] = {
+                        "size": size,
+                        "data": data
+                    }
+                except Exception as db_err:
+                    failed_dbs.append((db_num, str(db_err)))
+                    
+            if not snap_data:
+                raise ValueError("Nessun Data Block è stato letto con successo dal PLC.")
                 
             self.snap_a_data = snap_data
             self.snap_a_name = f"PLC Live ({self.plc_client.ip})"
             self.source_a_label.setText(f"<b>Origine A:</b> {self.snap_a_name}")
+            
+            if failed_dbs:
+                error_msgs = "\n".join([f"- DB {db}: {err}" for db, err in failed_dbs])
+                QMessageBox.warning(
+                    self, "Lettura PLC Parziale",
+                    f"Lettura completata. Caricate con successo {len(snap_data)} DB dal PLC.\n\n"
+                    f"Tuttavia, i seguenti {len(failed_dbs)} DB non sono stati letti a causa di errori:\n{error_msgs}"
+                )
+                
             self.check_compare_ready()
             
         except Exception as e:
@@ -236,18 +260,36 @@ class CompareWindow(QDialog):
             # Fetch all DBs and their current values
             db_list = self.plc_client.list_dbs()
             snap_data = {}
+            failed_dbs = []
             
             for db_num in db_list:
                 size = self.plc_client.get_db_size(db_num)
-                data = self.plc_client.read_db_bytes(db_num, size)
-                snap_data[db_num] = {
-                    "size": size,
-                    "data": data
-                }
+                if size == 0:
+                    continue
+                try:
+                    data = self.plc_client.read_db_bytes(db_num, size)
+                    snap_data[db_num] = {
+                        "size": size,
+                        "data": data
+                    }
+                except Exception as db_err:
+                    failed_dbs.append((db_num, str(db_err)))
+                    
+            if not snap_data:
+                raise ValueError("Nessun Data Block è stato letto con successo dal PLC.")
                 
             self.snap_b_data = snap_data
             self.snap_b_name = f"PLC Live ({self.plc_client.ip})"
             self.source_b_label.setText(f"<b>Origine B:</b> {self.snap_b_name}")
+            
+            if failed_dbs:
+                error_msgs = "\n".join([f"- DB {db}: {err}" for db, err in failed_dbs])
+                QMessageBox.warning(
+                    self, "Lettura PLC Parziale",
+                    f"Lettura completata. Caricate con successo {len(snap_data)} DB dal PLC.\n\n"
+                    f"Tuttavia, i seguenti {len(failed_dbs)} DB non sono stati letti a causa di errori:\n{error_msgs}"
+                )
+                
             self.check_compare_ready()
             
         except Exception as e:

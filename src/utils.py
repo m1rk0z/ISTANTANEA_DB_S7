@@ -3,6 +3,7 @@ import struct
 import concurrent.futures
 import ipaddress
 import logging
+import re
 
 logger = logging.getLogger("IstanteS7.Utils")
 
@@ -303,3 +304,170 @@ def pack_s7_data(datatype, value, byte_offset, bit_offset=0, existing_bytes=None
     except Exception as e:
         logger.error(f"Error packing S7 datatype {datatype} at offset {byte_offset}: {e}")
         return None
+
+def parse_s7_address(address_str):
+    """
+    Parses S7 address strings (English notation I, Q, M, DB and German/Italian aliases E, A).
+    Returns a dict:
+    {
+        "valid": True/False,
+        "area_code": 0x81 (PE/Inputs), 0x82 (PA/Outputs), 0x83 (MK/Merkers), 0x84 (DB),
+        "area_name": "I", "Q", "M", or "DB",
+        "db_number": int (0 for I/Q/M),
+        "byte_offset": int,
+        "bit_offset": int,
+        "datatype": "BOOL", "BYTE", "INT", "REAL", etc.,
+        "error": None or str
+    }
+    """
+    if not address_str or not isinstance(address_str, str):
+        return {"valid": False, "error": "Indirizzo vuoto."}
+        
+    raw = address_str.strip().upper()
+    
+    # 1. DB Bit: DB1.DBX0.0 or DB1.X0.0 or DB1.0.0
+    m = re.match(r'^DB(\d+)\.(?:DBX|X)?(\d+)\.([0-7])$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x84, "area_name": f"DB{m.group(1)}",
+            "db_number": int(m.group(1)), "byte_offset": int(m.group(2)),
+            "bit_offset": int(m.group(3)), "datatype": "BOOL", "error": None
+        }
+        
+    # 2. DB Byte: DB1.DBB0 or DB1.B0
+    m = re.match(r'^DB(\d+)\.(?:DBB|B)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x84, "area_name": f"DB{m.group(1)}",
+            "db_number": int(m.group(1)), "byte_offset": int(m.group(2)),
+            "bit_offset": 0, "datatype": "BYTE", "error": None
+        }
+
+    # 3. DB Word: DB1.DBW0 or DB1.W0
+    m = re.match(r'^DB(\d+)\.(?:DBW|W)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x84, "area_name": f"DB{m.group(1)}",
+            "db_number": int(m.group(1)), "byte_offset": int(m.group(2)),
+            "bit_offset": 0, "datatype": "INT", "error": None
+        }
+
+    # 4. DB DWord/Float: DB1.DBD0 or DB1.D0
+    m = re.match(r'^DB(\d+)\.(?:DBD|D)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x84, "area_name": f"DB{m.group(1)}",
+            "db_number": int(m.group(1)), "byte_offset": int(m.group(2)),
+            "bit_offset": 0, "datatype": "REAL", "error": None
+        }
+        
+    # 5. DB Byte shorthand: DB1.0
+    m = re.match(r'^DB(\d+)\.(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x84, "area_name": f"DB{m.group(1)}",
+            "db_number": int(m.group(1)), "byte_offset": int(m.group(2)),
+            "bit_offset": 0, "datatype": "BYTE", "error": None
+        }
+
+    # 6. Inputs (I / PE / E): I0.0, IX0.0, E0.0
+    m = re.match(r'^(?:I|IX|PE|E|EX)(\d+)\.([0-7])$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x81, "area_name": "I",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": int(m.group(2)), "datatype": "BOOL", "error": None
+        }
+
+    m = re.match(r'^(?:IB|EB)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x81, "area_name": "I",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "BYTE", "error": None
+        }
+
+    m = re.match(r'^(?:IW|EW)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x81, "area_name": "I",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "INT", "error": None
+        }
+
+    m = re.match(r'^(?:ID|ED)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x81, "area_name": "I",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "REAL", "error": None
+        }
+
+    # 7. Outputs (Q / PA / A): Q0.0, QX0.0, A0.0
+    m = re.match(r'^(?:Q|QX|PA|A|AX)(\d+)\.([0-7])$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x82, "area_name": "Q",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": int(m.group(2)), "datatype": "BOOL", "error": None
+        }
+
+    m = re.match(r'^(?:QB|AB)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x82, "area_name": "Q",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "BYTE", "error": None
+        }
+
+    m = re.match(r'^(?:QW|AW)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x82, "area_name": "Q",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "INT", "error": None
+        }
+
+    m = re.match(r'^(?:QD|AD)(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x82, "area_name": "Q",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "REAL", "error": None
+        }
+
+    # 8. Merkers (M / MK): M0.0, MX0.0
+    m = re.match(r'^(?:M|MX|MK)(\d+)\.([0-7])$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x83, "area_name": "M",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": int(m.group(2)), "datatype": "BOOL", "error": None
+        }
+
+    m = re.match(r'^MB(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x83, "area_name": "M",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "BYTE", "error": None
+        }
+
+    m = re.match(r'^MW(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x83, "area_name": "M",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "INT", "error": None
+        }
+
+    m = re.match(r'^MD(\d+)$', raw)
+    if m:
+        return {
+            "valid": True, "area_code": 0x83, "area_name": "M",
+            "db_number": 0, "byte_offset": int(m.group(1)),
+            "bit_offset": 0, "datatype": "REAL", "error": None
+        }
+
+    return {"valid": False, "error": f"Sintassi indirizzo '{address_str}' non riconosciuta."}
+

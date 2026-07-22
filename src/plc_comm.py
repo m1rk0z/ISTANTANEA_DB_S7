@@ -25,6 +25,9 @@ class PLCClient:
             10: bytearray(50),                             # DB10: 50 bytes (all zeros)
             100: bytearray([0x41, 0x42, 0x00, 0x01, 0x00, 0x0A, 0x40, 0x49, 0x0F, 0xDB] + [0]*30) # DB100: 40 bytes with some numbers
         }
+        self.sim_inputs = bytearray([0x05, 0x00, 0x12, 0x34] + [0] * 1020)
+        self.sim_outputs = bytearray([0x01, 0x00, 0x56, 0x78] + [0] * 1020)
+        self.sim_merkers = bytearray([0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xD2] + [0] * 1012) # MW10=1234 (0x04D2)
         self.sim_cpu_info = {
             "ModuleTypeName": "CPU 315-2 PN/DP (SIM)",
             "SerialNumber": "S7-SIM-12345678",
@@ -272,3 +275,75 @@ class PLCClient:
         except Exception as e:
             logger.error(f"Failed to write DB {db_number}: {e}")
             raise PLCCommError(f"Failed to write DB {db_number}: {str(e)}")
+
+    def read_area_bytes(self, area_code, db_number=0, start_offset=0, size=1):
+        """
+        Reads bytes from a specific S7 memory area:
+        area_code: 0x81 (PE/Inputs), 0x82 (PA/Outputs), 0x83 (MK/Merkers), 0x84 (DB)
+        """
+        if not self.is_connected():
+            raise PLCCommError("Not connected to PLC.")
+            
+        if self.simulate:
+            time.sleep(0.01)
+            if area_code == 0x84: # DB
+                if db_number not in self.sim_dbs:
+                    self.sim_dbs[db_number] = bytearray(max(256, start_offset + size))
+                buf = self.sim_dbs[db_number]
+            elif area_code == 0x81: # PE (Inputs)
+                buf = self.sim_inputs
+            elif area_code == 0x82: # PA (Outputs)
+                buf = self.sim_outputs
+            elif area_code == 0x83: # MK (Merkers)
+                buf = self.sim_merkers
+            else:
+                buf = bytearray(start_offset + size)
+
+            if len(buf) < start_offset + size:
+                buf.extend(bytearray(start_offset + size - len(buf)))
+                
+            return bytearray(buf[start_offset:start_offset + size])
+
+        try:
+            data = self.client.read_area(area_code, db_number, start_offset, size)
+            return bytearray(data)
+        except Exception as e:
+            logger.error(f"Failed to read area {hex(area_code)} DB {db_number} offset {start_offset}: {e}")
+            raise PLCCommError(f"Read error: {str(e)}")
+
+    def write_area_bytes(self, area_code, db_number=0, start_offset=0, data=b''):
+        """
+        Writes bytes to a specific S7 memory area.
+        """
+        if not self.is_connected():
+            raise PLCCommError("Not connected to PLC.")
+            
+        if self.simulate:
+            time.sleep(0.02)
+            if area_code == 0x84: # DB
+                if db_number not in self.sim_dbs:
+                    self.sim_dbs[db_number] = bytearray(start_offset + len(data))
+                buf = self.sim_dbs[db_number]
+            elif area_code == 0x81: # PE (Inputs)
+                buf = self.sim_inputs
+            elif area_code == 0x82: # PA (Outputs)
+                buf = self.sim_outputs
+            elif area_code == 0x83: # MK (Merkers)
+                buf = self.sim_merkers
+            else:
+                return
+
+            needed = start_offset + len(data)
+            if len(buf) < needed:
+                buf.extend(bytearray(needed - len(buf)))
+            buf[start_offset:needed] = data
+            logger.info(f"Simulated write of {len(data)} bytes to area {hex(area_code)} DB {db_number} offset {start_offset}")
+            return
+
+        try:
+            self.client.write_area(area_code, db_number, start_offset, data)
+            logger.info(f"Wrote {len(data)} bytes to area {hex(area_code)} DB {db_number} offset {start_offset}")
+        except Exception as e:
+            logger.error(f"Failed to write area {hex(area_code)} DB {db_number} offset {start_offset}: {e}")
+            raise PLCCommError(f"Write error: {str(e)}")
+
