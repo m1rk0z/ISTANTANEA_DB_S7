@@ -515,6 +515,9 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'var_tables_folder_node') or not self.var_tables_folder_node:
             return
             
+        if hasattr(self, 'tree') and self.tree and self.tree.selectionModel():
+            self.tree.selectionModel().blockSignals(True)
+            
         self.var_tables_folder_node.removeRows(0, self.var_tables_folder_node.rowCount())
         for tname in self.watch_tables.keys():
             t_item = QStandardItem(tname)
@@ -524,6 +527,9 @@ class MainWindow(QMainWindow):
             self.var_tables_folder_node.appendRow(t_item)
             
         self.tree.expandAll()
+        
+        if hasattr(self, 'tree') and self.tree and self.tree.selectionModel():
+            self.tree.selectionModel().blockSignals(False)
 
     def update_project_tree_online(self):
         # Update connection node name
@@ -545,6 +551,8 @@ class MainWindow(QMainWindow):
         self.tree.expandAll()
 
     def on_tree_node_clicked(self, index):
+        if not index.isValid():
+            return
         item = self.tree_model.itemFromIndex(index)
         if not item:
             return
@@ -559,8 +567,9 @@ class MainWindow(QMainWindow):
         elif item.parent() == self.var_tables_folder_node:
             self.tabs.setCurrentIndex(2) # Go to Watch Tables
             tname = item.data(Qt.ItemDataRole.UserRole) or text
-            self.watch_table_tab.refresh_table_list(select_table=tname)
-        elif db_num is not None and item.parent() == self.blocks_folder_node:
+            if hasattr(self, 'watch_table_tab') and self.watch_table_tab:
+                self.watch_table_tab.load_active_table(tname)
+        elif db_num is not None and isinstance(db_num, int) and item.parent() == self.blocks_folder_node:
             self.tabs.setCurrentIndex(1) # Go to individual DB mapper
             size = self.dbs_sizes.get(db_num, 0)
             if size <= 0:

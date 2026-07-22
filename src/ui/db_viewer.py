@@ -329,34 +329,38 @@ class DBViewer(QWidget):
     def update_live_values(self):
         is_conn = self.plc_client and self.plc_client.is_connected()
         
-        for row, var in enumerate(self.variables):
-            offset = var["offset"]
-            dtype = var["type"]
-            
-            if not is_conn or not self.raw_data:
-                val = "---"
-            else:
-                offset_str = str(offset)
-                if "." in offset_str:
-                    parts = offset_str.split('.')
-                    byte_off = int(parts[0])
-                    bit_off = int(parts[1])
-                else:
-                    byte_off = int(offset)
-                    bit_off = 0
-                    
-                val = parse_s7_data(dtype, self.raw_data, byte_off, bit_off)
-                if val is None:
+        self.table.blockSignals(True)
+        try:
+            for row, var in enumerate(self.variables):
+                offset = var["offset"]
+                dtype = var["type"]
+                
+                if not is_conn or not self.raw_data:
                     val = "---"
-            
-            # Put in table
-            item = self.table.item(row, 3)
-            if item:
-                item.setText(str(val))
-                if val == "---":
-                    item.setForeground(Qt.GlobalColor.gray)
                 else:
-                    item.setForeground(Qt.GlobalColor.black)
+                    offset_str = str(offset)
+                    if "." in offset_str:
+                        parts = offset_str.split('.')
+                        byte_off = int(parts[0])
+                        bit_off = int(parts[1])
+                    else:
+                        byte_off = int(offset)
+                        bit_off = 0
+                        
+                    val = parse_s7_data(dtype, self.raw_data, byte_off, bit_off)
+                    if val is None:
+                        val = "---"
+                
+                # Put in table
+                item = self.table.item(row, 3)
+                if item:
+                    item.setText(str(val))
+                    if val == "---":
+                        item.setForeground(Qt.GlobalColor.gray)
+                    else:
+                        item.setForeground(Qt.GlobalColor.black)
+        finally:
+            self.table.blockSignals(False)
 
     def write_single_variable(self, row):
         if not self.db_number:

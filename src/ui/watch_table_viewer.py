@@ -332,7 +332,7 @@ class WatchTableViewer(QWidget):
     def on_table_item_changed(self, item):
         row = item.row()
         col = item.column()
-        if not self.active_table_name or row < 0:
+        if not self.active_table_name or row < 0 or col not in [0, 1]:
             return
             
         vars_list = self.watch_tables.get(self.active_table_name, [])
@@ -411,42 +411,46 @@ class WatchTableViewer(QWidget):
         is_conn = self.plc_client is not None and self.plc_client.is_connected()
         vars_list = self.watch_tables.get(self.active_table_name, [])
         
-        for row, var in enumerate(vars_list):
-            if row >= self.table.rowCount():
-                continue
-                
-            addr_str = var.get("address", "")
-            dtype = var.get("type", "INT")
-            parsed = parse_s7_address(addr_str)
-            
-            val = "---"
-            if is_conn and parsed["valid"]:
-                area = parsed["area_code"]
-                db_num = parsed["db_number"]
-                byte_off = parsed["byte_offset"]
-                bit_off = parsed["bit_offset"]
-                
-                # Determine required read length
-                size = 1
-                if dtype in ["INT", "WORD"]: size = 2
-                elif dtype in ["DINT", "DWORD", "REAL"]: size = 4
-                elif dtype == "STRING": size = 256
-                
-                try:
-                    data_bytes = self.plc_client.read_area_bytes(area, db_num, byte_off, size)
-                    val = parse_s7_data(dtype, data_bytes, 0, bit_off)
-                    if val is None:
-                        val = "---"
-                except Exception as e:
-                    val = "Err"
+        self.table.blockSignals(True)
+        try:
+            for row, var in enumerate(vars_list):
+                if row >= self.table.rowCount():
+                    continue
                     
-            item = self.table.item(row, 3)
-            if item:
-                item.setText(str(val))
-                if val in ["---", "Err"]:
-                    item.setForeground(QColor("gray") if val == "---" else QColor("red"))
-                else:
-                    item.setForeground(QColor("black"))
+                addr_str = var.get("address", "")
+                dtype = var.get("type", "INT")
+                parsed = parse_s7_address(addr_str)
+                
+                val = "---"
+                if is_conn and parsed["valid"]:
+                    area = parsed["area_code"]
+                    db_num = parsed["db_number"]
+                    byte_off = parsed["byte_offset"]
+                    bit_off = parsed["bit_offset"]
+                    
+                    # Determine required read length
+                    size = 1
+                    if dtype in ["INT", "WORD"]: size = 2
+                    elif dtype in ["DINT", "DWORD", "REAL"]: size = 4
+                    elif dtype == "STRING": size = 256
+                    
+                    try:
+                        data_bytes = self.plc_client.read_area_bytes(area, db_num, byte_off, size)
+                        val = parse_s7_data(dtype, data_bytes, 0, bit_off)
+                        if val is None:
+                            val = "---"
+                    except Exception:
+                        val = "Err"
+                        
+                item = self.table.item(row, 3)
+                if item:
+                    item.setText(str(val))
+                    if val in ["---", "Err"]:
+                        item.setForeground(QColor("gray") if val == "---" else QColor("red"))
+                    else:
+                        item.setForeground(QColor("black"))
+        finally:
+            self.table.blockSignals(False)
 
     def write_single_variable(self, row):
         if not self.plc_client or not self.plc_client.is_connected():
